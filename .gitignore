@@ -1,0 +1,32 @@
+# Node modules
+node_modules/
+
+# Environment variables (VERY IMPORTANT)
+.env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build folders
+dist/
+build/
+
+# Coverage
+coverage/
+
+# VS Code
+.vscode/
+
+# Mac/Linux temp files
+*.swp
+
+# Optional: Supabase local files
+.supabase/
