@@ -1306,4 +1306,3 @@ if (require.main === module) {
 }
 
 module.exports = app;
-console.log("SUPABASE_URL:", process.env.SUPABASE_URL);
