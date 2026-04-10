@@ -1,0 +1,22 @@
+{
+  "name": "BlinkBasket - Online Grocery App",
+  "short_name": "BlinkBasket",
+  "description": "BlinkBasket lets you shop groceries instantly with smart recommendations, fast delivery, and seamless cart management.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0ea5e9",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/Blinkbasketlogo.JPEG",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "/Blinkbasketlogo.JPEG",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
