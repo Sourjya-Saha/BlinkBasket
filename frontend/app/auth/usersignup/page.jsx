@@ -98,9 +98,16 @@ export default function UserSignup() {
         .bbu-root { min-height: 100vh; background: #0a0c10; display: flex; align-items: center; justify-content: center; font-family: 'DM Sans', sans-serif; padding: 2rem 1rem; position: relative; overflow: hidden; }
         .bbu-root::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 55% 40% at 0% 10%, rgba(163,230,53,0.09) 0%, transparent 70%), radial-gradient(ellipse 50% 35% at 100% 90%, rgba(163,230,53,0.07) 0%, transparent 70%); pointer-events: none; }
         .bbu-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(163,230,53,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(163,230,53,0.04) 1px, transparent 1px); background-size: 48px 48px; pointer-events: none; }
-        .bbu-card { position: relative; z-index: 1; width: 100%; max-width: 460px; background: #111318; border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 2.5rem 2.5rem 2rem; box-shadow: 0 0 0 1px rgba(163,230,53,0.06), 0 32px 64px rgba(0,0,0,0.5); animation: bbu-up 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+        .bbu-card { position: relative; z-index: 1; width: 100%; max-width: 460px;  animation: bbu-up 0.5s cubic-bezier(0.22,1,0.36,1) both; }
         @keyframes bbu-up { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:translateY(0); } }
-        .bbu-logo-row { display: flex; align-items: center; gap: 10px; margin-bottom: 2rem; }
+
+        .bbu-logo-row { display: flex; align-items: center; gap: 10px;  justify-content: center; }
+        .bb-logo-icon {
+          width: 200px; height: 150px;
+         
+          
+      
+        }
         .bbu-logo-icon { width: 36px; height: 36px; background: #a3e635; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
         .bbu-logo-text { font-family: 'Syne', sans-serif; font-size: 1.25rem; font-weight: 800; color: #fff; letter-spacing: -0.02em; }
         .bbu-heading { font-family: 'Syne', sans-serif; font-size: 1.75rem; font-weight: 800; color: #fff; letter-spacing: -0.03em; margin-bottom: 0.35rem; }
@@ -125,6 +132,7 @@ export default function UserSignup() {
         .bbu-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #6b7280; cursor: pointer; font-size: 0.8rem; font-family: 'DM Sans', sans-serif; padding: 4px 6px; transition: color 0.15s; }
         .bbu-toggle:hover { color: #a3e635; }
         .bbu-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 0.6rem 0.85rem; font-size: 0.82rem; color: #fca5a5; margin-bottom: 1rem; }
+         
         .bbu-submit { width: 100%; padding: 0.8rem 1rem; background: #a3e635; border: none; border-radius: 10px; color: #0a0c10; font-family: 'Syne', sans-serif; font-size: 0.95rem; font-weight: 700; cursor: pointer; transition: background 0.18s, transform 0.12s; margin-top: 0.25rem; }
         .bbu-submit:hover:not(:disabled) { background: #bef264; transform: translateY(-1px); }
         .bbu-submit:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -132,15 +140,18 @@ export default function UserSignup() {
         .bbu-footer a { color: #a3e635; text-decoration: none; font-weight: 500; }
         .bbu-spinner { width: 16px; height: 16px; border: 2px solid rgba(10,12,16,0.3); border-top-color: #0a0c10; border-radius: 50%; animation: bbu-spin 0.7s linear infinite; display: inline-block; vertical-align: middle; margin-right: 6px; }
         .bbu-spinner-white { border-color: rgba(255,255,255,0.25); border-top-color: #e5e7eb; }
-        @keyframes bbu-spin { to { transform: rotate(360deg); } }
+        @keyframes bbu-spin { to { transform: rotate(360deg); }
+         }
       `}</style>
 
       <div className="bbu-root">
-        <div className="bbu-grid" />
+      
         <div className="bbu-card">
           <div className="bbu-logo-row">
-            <div className="bbu-logo-icon">🛒</div>
-            <span className="bbu-logo-text">BlinkBasket</span>
+            <div className="bb-logo-icon">
+                <img src="/Blinkbasketlogonew.png" alt="BlinkBasket" />
+              </div>
+            
           </div>
           <h1 className="bbu-heading">Create account</h1>
           <p className="bbu-sub">Already have one? <Link href="/auth/logincommon">Sign in</Link></p>

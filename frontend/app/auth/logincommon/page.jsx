@@ -33,14 +33,22 @@ export default function LoginCommon() {
   // ── Handle Supabase OAuth callback ──────────────────────────────
   // When Supabase redirects back, it appends tokens in the URL hash.
   // supabase.auth.onAuthStateChange fires with the session automatically.
-  useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
-        await handleSupabaseGoogleSession(session);
-      }
-    });
-    return () => listener.subscription.unsubscribe();
-  }, []);
+useEffect(() => {
+  const hash = window.location.hash;
+  const isOAuthCallback = hash.includes('access_token');
+
+  // Clear the hash so a page refresh doesn't re-trigger
+  if (isOAuthCallback) {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+
+  const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
+    if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user && isOAuthCallback) {
+      await handleSupabaseGoogleSession(session);
+    }
+  });
+  return () => listener.subscription.unsubscribe();
+}, []);
 
   async function handleSupabaseGoogleSession(session) {
     try {
@@ -185,11 +193,7 @@ export default function LoginCommon() {
           width: 100%;
           max-width: 440px;
           margin: 2rem;
-          background: #111318;
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 20px;
-          padding: 2.5rem 2.5rem 2rem;
-          box-shadow: 0 0 0 1px rgba(163,230,53,0.06), 0 32px 64px rgba(0,0,0,0.5);
+         
           animation: bb-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
         }
 
@@ -198,19 +202,12 @@ export default function LoginCommon() {
           to   { opacity:1; transform:translateY(0);    }
         }
 
-        .bb-logo-row {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          margin-bottom: 2rem;
-        }
-
+       .bbu-logo-row { display: flex; align-items: center;   justify-content: center; }
         .bb-logo-icon {
-          width: 36px; height: 36px;
-          background: #a3e635;
-          border-radius: 9px;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 18px;
+          width: 200px; height: 150px;
+         
+          
+      
         }
 
         .bb-logo-text {
@@ -398,12 +395,14 @@ export default function LoginCommon() {
       `}</style>
 
       <div className="bb-root">
-        <div className="bb-grid" />
+       
 
         <div className="bb-card">
-          <div className="bb-logo-row">
-            <div className="bb-logo-icon">🛒</div>
-            <span className="bb-logo-text">BlinkBasket</span>
+         <div className="bbu-logo-row">
+            <div className="bb-logo-icon">
+                <img src="/Blinkbasketlogonew.png" alt="BlinkBasket" />
+              </div>
+            
           </div>
 
           <h1 className="bb-heading">Welcome back</h1>

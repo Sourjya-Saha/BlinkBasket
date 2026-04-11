@@ -67,7 +67,7 @@ export default function AdminSignup() {
         .bba-root { min-height: 100vh; background: #080a0f; display: flex; align-items: center; justify-content: center; font-family: 'DM Sans', sans-serif; padding: 2rem 1rem; position: relative; overflow: hidden; }
         .bba-root::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 55% 40% at 100% 0%, rgba(251,146,60,0.09) 0%, transparent 70%), radial-gradient(ellipse 45% 35% at 0% 100%, rgba(251,146,60,0.06) 0%, transparent 70%); pointer-events: none; }
         .bba-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(251,146,60,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(251,146,60,0.04) 1px, transparent 1px); background-size: 48px 48px; pointer-events: none; }
-        .bba-card { position: relative; z-index: 1; width: 100%; max-width: 480px; background: #0f1117; border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 2.5rem 2.5rem 2rem; box-shadow: 0 0 0 1px rgba(251,146,60,0.07), 0 32px 64px rgba(0,0,0,0.6); animation: bba-up 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+        .bba-card { position: relative; z-index: 1; width: 100%; max-width: 480px;  animation: bba-up 0.5s cubic-bezier(0.22,1,0.36,1) both; }
         @keyframes bba-up { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:translateY(0); } }
         .bba-logo-row { display: flex; align-items: center; gap: 10px; margin-bottom: 2rem; }
         .bba-logo-icon { width: 36px; height: 36px; background: #fb923c; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
@@ -102,10 +102,10 @@ export default function AdminSignup() {
       `}</style>
 
       <div className="bba-root">
-        <div className="bba-grid" />
+      
         <div className="bba-card">
           <div className="bba-logo-row">
-            <div className="bba-logo-icon">⚙️</div>
+            
             <span className="bba-logo-text">BlinkBasket</span>
             <span className="bba-badge">Admin</span>
           </div>
@@ -114,10 +114,7 @@ export default function AdminSignup() {
             Already have an account? <Link href="/auth/logincommon">Sign in</Link>&nbsp;·&nbsp;
             <Link href="/auth/usersignup">User signup</Link>
           </p>
-          <div className="bba-notice">
-            <span className="bba-notice-icon">🔐</span>
-            <span>This page is for authorised administrators only. You need the admin secret key to proceed.</span>
-          </div>
+          
           {error && <div className="bba-error">{error}</div>}
 
           <form onSubmit={handleSubmit}>

@@ -1,5 +1,5 @@
 // ============================================================
-// BLINKBASKET — server.js (v1.2)
+// BLINKBASKET — server.js (v1.3)
 // Stack: Node.js + Express + Supabase (PostgreSQL)
 // Deploy: Vercel (serverless)
 // ============================================================
@@ -91,38 +91,55 @@ async function sendMail(to, subject, html) {
 }
 
 async function sendSMS(to, body) {
-  if (!to) return;
-  await twilioClient.messages.create({ from: process.env.TWILIO_PHONE, to, body });
+  if (!to || !body) return;
+
+  try {
+    // 1. Clean the number (remove spaces, dashes, parentheses)
+    let formattedNumber = to.toString().replace(/[^0-9+]/g, '');
+
+    // 2. Prepend +91 if it's a 10-digit number without a country code
+    // Change '+91' to your primary target country code if different
+    if (formattedNumber.length === 10 && !formattedNumber.startsWith('+')) {
+      formattedNumber = `+91${formattedNumber}`;
+    } 
+    // 3. Prepend '+' if the user provided '91...' but forgot the '+'
+    else if (!formattedNumber.startsWith('+')) {
+      formattedNumber = `+${formattedNumber}`;
+    }
+
+    // 4. Execute Twilio call
+    const message = await twilioClient.messages.create({ 
+      from: process.env.TWILIO_PHONE, 
+      to: formattedNumber, 
+      body 
+    });
+
+    console.log(`✅ SMS sent to ${formattedNumber}. SID: ${message.sid}`);
+  } catch (err) {
+    console.error(`❌ Twilio Error [${to}]:`, err.message);
+    // We throw the error so the calling function (the cron worker) 
+    // knows NOT to mark this notification as 'sent' in the DB.
+    throw err; 
+  }
 }
 
 // ============================================================
 // ── AUTH ROUTES ─────────────────────────────────────────────
 // ============================================================
 
-/**
- * @route   POST /api/auth/signup
- * @desc    Register a new USER (role=user) with email, password & phone (required)
- * @access  Public
- * @body    { email, password, full_name?, phone }
- * @returns { token, user }
- */
 app.post("/api/auth/signup", async (req, res) => {
   try {
     const { email, password, full_name, phone } = req.body;
-
-    // ── Validation ──────────────────────────────────────────
     if (!email || !password)
       return res.status(400).json({ error: "Email and password are required" });
     if (!phone || phone.trim() === "")
       return res.status(400).json({ error: "Phone number is required" });
-
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
     const { data, error } = await supabase
       .from("users")
       .insert({ email, password: hashed, full_name, phone: phone.trim(), provider: "local", role: "user" })
       .select()
       .single();
-
     if (error) return res.status(400).json({ error: error.message });
     res.json({ token: signToken(data), user: { id: data.id, email: data.email, role: data.role } });
   } catch (err) {
@@ -130,141 +147,62 @@ app.post("/api/auth/signup", async (req, res) => {
   }
 });
 
-/**
- * @route   POST /api/auth/admin-signup
- * @desc    ATOMIC admin registration — validates secret, creates user with role=admin
- *          in a single operation so no orphan user rows are left on failure.
- * @access  Public (secret-key gated)
- * @body    { email, password, full_name?, phone, admin_secret }
- * @returns { token, user }
- */
 app.post("/api/auth/admin-signup", async (req, res) => {
   try {
     const { email, password, full_name, phone, admin_secret } = req.body;
-
-    // ── Step 1: Validate secret BEFORE touching the DB ──────
-    if (!admin_secret || admin_secret !== process.env.ADMIN_SIGNUP_SECRET) {
+    if (!admin_secret || admin_secret !== process.env.ADMIN_SIGNUP_SECRET)
       return res.status(403).json({ error: "Invalid admin secret key." });
-    }
-
-    // ── Step 2: Validate required fields ────────────────────
     if (!email || !password)
       return res.status(400).json({ error: "Email and password are required" });
     if (!phone || phone.trim() === "")
       return res.status(400).json({ error: "Phone number is required for admin accounts" });
     if (password.length < 8)
       return res.status(400).json({ error: "Admin password must be at least 8 characters" });
-
-    // ── Step 3: Check for existing email ────────────────────
-    const { data: existing } = await supabase
-      .from("users")
-      .select("id")
-      .eq("email", email)
-      .single();
-
-    if (existing) {
+    const { data: existing } = await supabase.from("users").select("id").eq("email", email).single();
+    if (existing)
       return res.status(400).json({ error: "An account with this email already exists." });
-    }
-
-    // ── Step 4: Create user directly with role=admin ─────────
-    // No two-step signup+promote — user is inserted as admin atomically.
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
     const { data, error } = await supabase
       .from("users")
-      .insert({
-        email,
-        password: hashed,
-        full_name,
-        phone: phone.trim(),
-        provider: "local",
-        role: "admin",          // ← set directly, no promotion needed
-      })
+      .insert({ email, password: hashed, full_name, phone: phone.trim(), provider: "local", role: "admin" })
       .select()
       .single();
-
     if (error) return res.status(400).json({ error: error.message });
-
-    res.status(201).json({
-      token: signToken(data),
-      user: { id: data.id, email: data.email, role: data.role },
-    });
+    res.status(201).json({ token: signToken(data), user: { id: data.id, email: data.email, role: data.role } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * @route   POST /api/auth/login
- * @desc    Login user with email & password
- * @access  Public
- * @body    { email, password }
- * @returns { token, user }
- */
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-    const { data: user, error } = await supabase
-      .from("users")
-      .select("*")
-      .eq("email", email)
-      .single();
-
+    const { data: user, error } = await supabase.from("users").select("*").eq("email", email).single();
     if (error || !user) return res.status(401).json({ error: "Invalid credentials" });
-    if (user.provider === "google")
-      return res.status(400).json({ error: "Please use Google login" });
-
+    if (user.provider === "google") return res.status(400).json({ error: "Please use Google login" });
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: "Invalid credentials" });
-
     res.json({ token: signToken(user), user: { id: user.id, email: user.email, role: user.role } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * @route   POST /api/auth/google
- * @desc    Handle Google OAuth — INSERT only if email doesn't exist.
- *          NEVER overwrites an existing local (email+password) account.
- *          If the email belongs to a local account, returns an error.
- * @access  Public
- * @body    { email, full_name?, phone? }
- * @returns { token, user }
- */
 app.post("/api/auth/google", async (req, res) => {
   try {
     const { email, full_name, phone } = req.body;
     if (!email) return res.status(400).json({ error: "Email is required" });
-
-    // ── Check if user already exists ────────────────────────
-    const { data: existing } = await supabase
-      .from("users")
-      .select("*")
-      .eq("email", email)
-      .single();
-
+    const { data: existing } = await supabase.from("users").select("*").eq("email", email).single();
     if (existing) {
-      // If the existing account is a LOCAL account, block Google login
-      // to prevent overwriting password/phone/full_name data.
-      if (existing.provider === "local") {
-        return res.status(400).json({
-          error: "An account with this email already exists. Please sign in with your email and password.",
-        });
-      }
-      // Existing Google account — just return a fresh token (no data overwrite)
-      return res.json({
-        token: signToken(existing),
-        user: { id: existing.id, email: existing.email, role: existing.role },
-      });
+      if (existing.provider === "local")
+        return res.status(400).json({ error: "An account with this email already exists. Please sign in with your email and password." });
+      return res.json({ token: signToken(existing), user: { id: existing.id, email: existing.email, role: existing.role } });
     }
-
-    // ── New Google user — INSERT only ────────────────────────
     const { data, error } = await supabase
       .from("users")
       .insert({ email, full_name, phone: phone?.trim() || null, provider: "google", password: null, role: "user" })
       .select()
       .single();
-
     if (error) return res.status(400).json({ error: error.message });
     res.json({ token: signToken(data), user: { id: data.id, email: data.email, role: data.role } });
   } catch (err) {
@@ -291,8 +229,7 @@ app.post("/api/categories", auth, adminOnly, async (req, res) => {
 
 app.put("/api/categories/:id", auth, adminOnly, async (req, res) => {
   const { name, image_url } = req.body;
-  const { data, error } = await supabase
-    .from("categories").update({ name, image_url }).eq("id", req.params.id).select().single();
+  const { data, error } = await supabase.from("categories").update({ name, image_url }).eq("id", req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
@@ -322,8 +259,7 @@ app.post("/api/manufacturers", auth, adminOnly, async (req, res) => {
 
 app.put("/api/manufacturers/:id", auth, adminOnly, async (req, res) => {
   const { name } = req.body;
-  const { data, error } = await supabase
-    .from("manufacturers").update({ name }).eq("id", req.params.id).select().single();
+  const { data, error } = await supabase.from("manufacturers").update({ name }).eq("id", req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
@@ -344,6 +280,8 @@ app.get("/api/products", async (req, res) => {
       category_id, manufacturer_id, is_featured, search,
       min_price, max_price, sort = "created_at", order = "desc",
       page = 1, limit = 20,
+      // Pass include_inactive=true from admin panel to see all products
+      include_inactive,
     } = req.query;
 
     const from = (page - 1) * limit;
@@ -352,9 +290,13 @@ app.get("/api/products", async (req, res) => {
     let query = supabase
       .from("products")
       .select("*, categories(name), manufacturers(name), product_variants(*)", { count: "exact" })
-      .eq("is_active", true)
       .range(from, to)
       .order(sort, { ascending: order === "asc" });
+
+    // Only filter by is_active when not explicitly requesting all
+    if (!include_inactive || include_inactive !== "true") {
+      query = query.eq("is_active", true);
+    }
 
     if (category_id) query = query.eq("category_id", category_id);
     if (manufacturer_id) query = query.eq("manufacturer_id", manufacturer_id);
@@ -375,7 +317,9 @@ app.get("/api/products/:slug", async (req, res) => {
   const { data, error } = await supabase
     .from("products")
     .select("*, categories(name), manufacturers(name), product_variants(*)")
-    .eq("slug", req.params.slug).eq("is_active", true).single();
+    .eq("slug", req.params.slug)
+    .eq("is_active", true)
+    .single();
   if (error) return res.status(404).json({ error: "Product not found" });
   res.json(data);
 });
@@ -385,16 +329,21 @@ app.post("/api/products", auth, adminOnly, async (req, res) => {
   const { data, error } = await supabase
     .from("products")
     .insert({ name, description, slug, price, stock, images, extra_details, is_featured, category_id, manufacturer_id })
-    .select().single();
+    .select()
+    .single();
   if (error) return res.status(400).json({ error: error.message });
   res.status(201).json(data);
 });
 
 app.put("/api/products/:id", auth, adminOnly, async (req, res) => {
-  const allowed = ["name","description","slug","price","stock","images","extra_details","is_featured","is_active","category_id","manufacturer_id"];
+  const allowed = ["name", "description", "slug", "price", "stock", "images", "extra_details", "is_featured", "is_active", "category_id", "manufacturer_id"];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   const { data, error } = await supabase
-    .from("products").update(updates).eq("id", req.params.id).select().single();
+    .from("products")
+    .update(updates)
+    .eq("id", req.params.id)
+    .select()
+    .single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
@@ -404,50 +353,196 @@ app.patch("/api/products/:id/stock", auth, adminOnly, async (req, res) => {
   if (stock === undefined || stock < 0)
     return res.status(400).json({ error: "Valid stock value required" });
   const { data, error } = await supabase
-    .from("products").update({ stock }).eq("id", req.params.id).select().single();
+    .from("products")
+    .update({ stock })
+    .eq("id", req.params.id)
+    .select()
+    .single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
 
-app.delete("/api/products/:id", auth, adminOnly, async (req, res) => {
-  const { error } = await supabase.from("products").update({ is_active: false }).eq("id", req.params.id);
+/**
+ * @route   PATCH /api/products/:id/activate
+ * @desc    Activate a product (set is_active = true)
+ * @access  Admin
+ */
+app.patch("/api/products/:id/activate", auth, adminOnly, async (req, res) => {
+  const { data, error } = await supabase
+    .from("products")
+    .update({ is_active: true })
+    .eq("id", req.params.id)
+    .select()
+    .single();
   if (error) return res.status(400).json({ error: error.message });
-  res.json({ success: true });
+  res.json(data);
+});
+
+/**
+ * @route   PATCH /api/products/:id/deactivate
+ * @desc    Deactivate a product (set is_active = false, soft hide from store)
+ * @access  Admin
+ */
+app.patch("/api/products/:id/deactivate", auth, adminOnly, async (req, res) => {
+  const { data, error } = await supabase
+    .from("products")
+    .update({ is_active: false })
+    .eq("id", req.params.id)
+    .select()
+    .single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+/**
+ * @route   DELETE /api/products/:id
+ * @desc    HARD DELETE a product and all its variants/cart items (permanent)
+ * @access  Admin
+ */
+app.delete("/api/products/:id", auth, adminOnly, async (req, res) => {
+  try {
+    const productId = req.params.id;
+
+    // 1. Remove from any active carts first (foreign key safety)
+    await supabase.from("cart_items").delete().eq("product_id", productId);
+
+    // 2. Remove stock alerts
+    await supabase.from("stock_alerts").delete().eq("product_id", productId);
+
+    // 3. Remove from notifications queue
+    await supabase.from("notifications_queue").delete().eq("product_id", productId);
+
+    // 4. Hard delete the product (variants cascade via ON DELETE CASCADE)
+    const { error } = await supabase.from("products").delete().eq("id", productId);
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.json({ success: true, deleted: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ============================================================
 // ── PRODUCT VARIANTS ────────────────────────────────────────
 // ============================================================
 
+/**
+ * @route   GET /api/products/:id/variants
+ * @desc    Get all active variants for a product
+ */
 app.get("/api/products/:id/variants", async (req, res) => {
+  const productId = parseInt(req.params.id, 10);
+  if (isNaN(productId))
+    return res.status(400).json({ error: "Invalid product ID" });
+
   const { data, error } = await supabase
-    .from("product_variants").select("*").eq("product_id", req.params.id).eq("is_active", true);
+    .from("product_variants")
+    .select("*")
+    .eq("product_id", productId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true });
+
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
 
+/**
+ * @route   POST /api/products/:id/variants
+ * @desc    Create a new variant for a product
+ * @body    { variant_name, price, stock }
+ */
 app.post("/api/products/:id/variants", auth, adminOnly, async (req, res) => {
+  const productId = parseInt(req.params.id, 10);
+  if (isNaN(productId))
+    return res.status(400).json({ error: "Invalid product ID" });
+
   const { variant_name, price, stock } = req.body;
+
+  if (!variant_name || !variant_name.trim())
+    return res.status(400).json({ error: "variant_name is required" });
+  if (!price || isNaN(Number(price)) || Number(price) <= 0)
+    return res.status(400).json({ error: "Valid price is required" });
+  if (stock === undefined || stock === null || isNaN(Number(stock)) || Number(stock) < 0)
+    return res.status(400).json({ error: "Valid stock is required" });
+
+  // Verify the product exists before inserting
+  const { data: product, error: productErr } = await supabase
+    .from("products")
+    .select("id")
+    .eq("id", productId)
+    .single();
+
+  if (productErr || !product)
+    return res.status(404).json({ error: "Product not found" });
+
   const { data, error } = await supabase
     .from("product_variants")
-    .insert({ product_id: req.params.id, variant_name, price, stock })
-    .select().single();
+    .insert({
+      product_id: productId,
+      variant_name: variant_name.trim(),
+      price: parseFloat(price),
+      stock: parseInt(stock),
+      is_active: true,
+    })
+    .select()
+    .single();
+
   if (error) return res.status(400).json({ error: error.message });
   res.status(201).json(data);
 });
 
+/**
+ * @route   PUT /api/variants/:id
+ * @desc    Update an existing variant (name, price, stock, is_active)
+ */
 app.put("/api/variants/:id", auth, adminOnly, async (req, res) => {
+  const variantId = parseInt(req.params.id, 10);
+  if (isNaN(variantId))
+    return res.status(400).json({ error: "Invalid variant ID" });
+
   const { variant_name, price, stock, is_active } = req.body;
+
+  const updates = {};
+  if (variant_name !== undefined) updates.variant_name = variant_name;
+  if (price !== undefined) updates.price = parseFloat(price);
+  if (stock !== undefined) updates.stock = parseInt(stock);
+  if (is_active !== undefined) updates.is_active = is_active;
+
+  if (Object.keys(updates).length === 0)
+    return res.status(400).json({ error: "No valid fields to update" });
+
   const { data, error } = await supabase
-    .from("product_variants").update({ variant_name, price, stock, is_active }).eq("id", req.params.id).select().single();
+    .from("product_variants")
+    .update(updates)
+    .eq("id", variantId)
+    .select()
+    .single();
+
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
 
+/**
+ * @route   DELETE /api/variants/:id
+ * @desc    HARD DELETE a variant (removes from DB permanently)
+ * @access  Admin
+ */
 app.delete("/api/variants/:id", auth, adminOnly, async (req, res) => {
-  const { error } = await supabase.from("product_variants").update({ is_active: false }).eq("id", req.params.id);
+  const variantId = parseInt(req.params.id, 10);
+  if (isNaN(variantId))
+    return res.status(400).json({ error: "Invalid variant ID" });
+
+  // Remove variant from any active cart items first
+  await supabase.from("cart_items").delete().eq("variant_id", variantId);
+
+  // Hard delete the variant
+  const { error } = await supabase
+    .from("product_variants")
+    .delete()
+    .eq("id", variantId);
+
   if (error) return res.status(400).json({ error: error.message });
-  res.json({ success: true });
+  res.json({ success: true, deleted: true });
 });
 
 // ============================================================
@@ -813,7 +908,7 @@ app.get("/alerts/stock", auth, async (req, res) => {
 });
 
 // ============================================================
-// ── NOTIFICATION CRON WORKER ───────────────────────────────
+// ── NOTIFICATION CRON WORKER ────────────────────────────────
 // ============================================================
 
 async function processNotifications() {
@@ -825,7 +920,7 @@ async function processNotifications() {
   for (const notif of pending) {
     try {
       if (notif.type === "USER_STOCK_AVAILABLE" && notif.users) {
-        const productUrl = `${process.env.FRONTEND_URL}/products/${notif.products?.slug}`;
+        const productUrl = `${process.env.FRONTEND_URL}/userdashboard/products/${notif.products?.slug}`;
         await sendMail(notif.users.email, `${notif.products?.name} is back in stock! 🛒`,
           `<p>Hi ${notif.users.full_name || "there"},</p>
            <p><strong>${notif.products?.name}</strong> is back in stock on BlinkBasket.</p>
@@ -936,7 +1031,7 @@ app.patch("/admin/users/:id/role", auth, adminOnly, async (req, res) => {
 // ============================================================
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", version: "1.2", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", version: "1.3", timestamp: new Date().toISOString() });
 });
 
 app.use((_req, res) => res.status(404).json({ error: "Route not found" }));
