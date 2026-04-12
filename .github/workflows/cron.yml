@@ -1,0 +1,15 @@
+name: Notification Cron
+
+on:
+  schedule:
+    - cron: "* * * * *"   # every 1 minute
+  workflow_dispatch:      # 👈 allows manual run
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call API
+        run: |
+          curl -X POST https://blink-basket-backend-v11.vercel.app/admin/notifications/process \
+          -H "x-cron-secret: e3924d2eebcd9a01cab6619ad8f33ae385ab93908e589681570d688f51dba528"
