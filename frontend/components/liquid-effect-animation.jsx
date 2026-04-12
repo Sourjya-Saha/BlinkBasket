@@ -3,143 +3,137 @@ import { useEffect, useRef } from "react";
 
 export function LiquidEffectAnimation() {
   const canvasRef = useRef(null);
-  const appRef = useRef(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvasRef.current) return;
 
-    let destroyed = false;
+    // --- Gyroscope → Mouse simulation ---
+    // We convert device tilt (beta/gamma) into synthetic mousemove events
+    // so the liquid library reacts to phone movement naturally
 
-    const setCanvasSize = () => {
-      canvas.width = window.innerWidth * window.devicePixelRatio;
-      canvas.height = window.innerHeight * window.devicePixelRatio;
-      canvas.style.width = "100%";
-      canvas.style.height = "100%";
-    };
-    setCanvasSize();
+    let gyroEnabled = false;
 
-    // Touch → Mouse bridge
-    const simulateMouseEvent = (type, touch) => {
-      const evt = new MouseEvent(type, {
+    const handleOrientation = (e) => {
+      // gamma = left/right tilt (-90 to 90), beta = front/back tilt (-180 to 180)
+      const gamma = e.gamma ?? 0; // X axis (left/right)
+      const beta = e.beta ?? 0;   // Y axis (front/back)
+
+      // Normalize to 0–1 range relative to screen size
+      // gamma range clamped to [-45, 45] for comfortable tilt
+      const clampedGamma = Math.max(-45, Math.min(45, gamma));
+      const clampedBeta = Math.max(-45, Math.min(45, beta - 45)); // offset so flat phone = center
+
+      const x = ((clampedGamma + 45) / 90) * window.innerWidth;
+      const y = ((clampedBeta + 45) / 90) * window.innerHeight;
+
+      const evt = new MouseEvent("mousemove", {
         bubbles: true,
         cancelable: true,
-        clientX: touch.clientX,
-        clientY: touch.clientY,
-        screenX: touch.screenX,
-        screenY: touch.screenY,
+        clientX: x,
+        clientY: y,
       });
-      canvas.dispatchEvent(evt);
       window.dispatchEvent(evt);
+      canvasRef.current?.dispatchEvent(evt);
     };
 
-    const onTouchStart = (e) => {
-      const touch = e.touches[0];
-      simulateMouseEvent("mousedown", touch);
-      simulateMouseEvent("click", touch);
+    const requestGyroPermission = async () => {
+      // iOS 13+ requires explicit permission for DeviceOrientationEvent
+      if (
+        typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function"
+      ) {
+        try {
+          const permission = await DeviceOrientationEvent.requestPermission();
+          if (permission === "granted") {
+            window.addEventListener("deviceorientation", handleOrientation);
+            gyroEnabled = true;
+          }
+        } catch (err) {
+          console.warn("Gyro permission denied:", err);
+        }
+      } else {
+        // Android and non-iOS — no permission needed
+        window.addEventListener("deviceorientation", handleOrientation);
+        gyroEnabled = true;
+      }
     };
-    const onTouchMove = (e) => {
-      e.preventDefault();
-      const touch = e.touches[0];
-      simulateMouseEvent("mousemove", touch);
-    };
-    const onTouchEnd = (e) => {
-      const touch = e.changedTouches[0];
-      simulateMouseEvent("mouseup", touch);
-    };
 
-    canvas.addEventListener("touchstart", onTouchStart, { passive: true });
-    canvas.addEventListener("touchmove", onTouchMove, { passive: false });
-    canvas.addEventListener("touchend", onTouchEnd, { passive: true });
+    // Detect if touch device — only activate gyro on mobile
+    const isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
 
-    const initLiquid = (LiquidBackground) => {
-      if (destroyed) return;
-
-      const app = LiquidBackground(canvas);
-      appRef.current = app;
-
-      app.loadImage(
-        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-      );
-
-      const material = app.liquidPlane.material;
-      material.color.set("#000000");
-      material.metalness = 0.6;
-      material.roughness = 0.4;
-      material.emissive.set("#000000");
-      material.emissiveIntensity = 0;
-      app.liquidPlane.uniforms.displacementScale.value = 5;
-      app.setRain(false);
-
-      const handleResize = () => {
-        setCanvasSize();
-        if (app.onWindowResize) app.onWindowResize();
+    if (isMobile) {
+      // iOS requires gyro permission to be triggered by a user gesture.
+      // We attach a one-time tap listener to request it on first touch.
+      const onFirstTouch = () => {
+        requestGyroPermission();
+        window.removeEventListener("touchstart", onFirstTouch);
       };
-      window.addEventListener("resize", handleResize);
-      appRef.current._resizeHandler = handleResize;
-    };
+      window.addEventListener("touchstart", onFirstTouch, { once: true });
 
-    // If already loaded from a previous render, reuse it
-    if (window.__LiquidBG) {
-      initLiquid(window.__LiquidBG);
-      return;
+      // Also set up touch → click bridge so taps still trigger ripples
+      const onTouchStart = (e) => {
+        const touch = e.touches[0];
+        const click = new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+        });
+        canvasRef.current?.dispatchEvent(click);
+        window.dispatchEvent(click);
+      };
+      canvasRef.current?.addEventListener("touchstart", onTouchStart, { passive: true });
     }
 
-    // Register a global callback that the module script will call
-    // This is the key trick — the module script calls window.__onLiquidBGLoaded(LiquidBackground)
-    // so we receive the ES module default export without webpack ever seeing the URL
-    window.__onLiquidBGLoaded = (LiquidBackground) => {
-      window.__LiquidBG = LiquidBackground;
-      initLiquid(LiquidBackground);
-    };
+    // --- Inject the liquid script (same approach as before) ---
+    const script = document.createElement("script");
+    script.type = "module";
+    script.textContent = `
+      import LiquidBackground from 'https://cdn.jsdelivr.net/npm/threejs-components@0.0.22/build/backgrounds/liquid1.min.js';
+      
+      const canvas = document.getElementById('liquid-canvas');
+      if (canvas) {
+        const app = LiquidBackground(canvas);
 
-    if (!document.getElementById("liquid-bg-script")) {
-      const script = document.createElement("script");
-      script.id = "liquid-bg-script";
-      script.type = "module";
-      // The URL is inside a string literal — webpack never resolves it
-      script.textContent = `
-        import LiquidBackground from 'https://cdn.jsdelivr.net/npm/threejs-components@0.0.22/build/backgrounds/liquid1.min.js';
-        if (window.__onLiquidBGLoaded) window.__onLiquidBGLoaded(LiquidBackground);
-      `;
-      document.head.appendChild(script);
-    }
+        app.loadImage('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==');
+
+        const material = app.liquidPlane.material;
+        material.color.set("#000000");
+        material.metalness = 0.6;
+        material.roughness = 0.4;
+        material.emissive.set("#000000");
+        material.emissiveIntensity = 0;
+
+        app.liquidPlane.uniforms.displacementScale.value = 5;
+        app.setRain(false);
+
+        window.__liquidApp = app;
+      }
+    `;
+    document.body.appendChild(script);
 
     return () => {
-      destroyed = true;
-      canvas.removeEventListener("touchstart", onTouchStart);
-      canvas.removeEventListener("touchmove", onTouchMove);
-      canvas.removeEventListener("touchend", onTouchEnd);
-      if (appRef.current) {
-        if (appRef.current._resizeHandler) {
-          window.removeEventListener("resize", appRef.current._resizeHandler);
-        }
-        if (appRef.current.dispose) appRef.current.dispose();
-        appRef.current = null;
+      if (gyroEnabled) {
+        window.removeEventListener("deviceorientation", handleOrientation);
+      }
+      if (window.__liquidApp?.dispose) {
+        window.__liquidApp.dispose();
+      }
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
       }
     };
   }, []);
 
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        width: "100%",
-        height: "100%",
-        overflow: "hidden",
-        background: "#000",
-      }}
+      className="fixed inset-0 w-full h-full overflow-hidden"
+      style={{ background: "#000" }}
     >
       <canvas
         ref={canvasRef}
-        style={{
-          position: "fixed",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          display: "block",
-        }}
+        id="liquid-canvas"
+        className="fixed inset-0 w-full h-full"
       />
     </div>
   );
