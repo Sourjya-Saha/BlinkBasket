@@ -561,30 +561,44 @@ app.get("/cart", auth, async (req, res) => {
   if (!cart) return res.json({ items: [] });
   const { data, error } = await supabase
     .from("cart_items")
-    .select("*, products(id, name, images, price, slug), product_variants(id, variant_name, price)")
+    .select("*, products(id, name, images, price, slug, stock), product_variants(id, variant_name, price, stock)")
     .eq("cart_id", cart.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ items: data });
 });
-
+ 
 app.post("/cart", auth, async (req, res) => {
   try {
-    const { product_id, variant_id = null, quantity = 1 } = req.body;
-    if (!product_id) return res.status(400).json({ error: "product_id is required" });
+    // Map both snake_case and camelCase to handle requests from the new frontend
+    const product_id = req.body.product_id || req.body.productId;
+    const variant_id = req.body.variant_id || req.body.variantId || null;
+    const quantity = req.body.quantity || 1;
+
+    if (!product_id) {
+      return res.status(400).json({ error: "product_id is required" });
+    }
+
     const cartId = await ensureCart(req.user.id);
+    
     const { error } = await supabase.rpc("upsert_cart_item", {
-      p_cart_id: cartId, p_product_id: product_id, p_variant_id: variant_id, p_quantity: quantity,
+      p_cart_id: cartId, 
+      p_product_id: product_id, 
+      p_variant_id: variant_id, 
+      p_quantity: quantity,
     });
+
     if (error) {
       await supabase.from("cart_items").upsert(
         { cart_id: cartId, product_id, variant_id, quantity },
         { onConflict: "cart_id,product_id,variant_id", ignoreDuplicates: false }
       );
     }
+
     const { data: items } = await supabase
       .from("cart_items")
       .select("*, products(name, images, price), product_variants(variant_name, price)")
       .eq("cart_id", cartId);
+
     res.json({ items });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -683,6 +697,28 @@ async function finaliseOrder(orderId, userId) {
 
   if (!cartItems || cartItems.length === 0) throw new Error("Cart is empty");
 
+// ── Stock validation before committing ──
+for (const item of cartItems) {
+  if (item.variant_id) {
+    const availableStock = item.product_variants?.stock ?? 0;
+    if (item.quantity > availableStock) {
+      const name = item.products?.name || 'A product';
+      const variantName = item.product_variants?.variant_name || '';
+      throw new Error(
+        `Not enough stock for "${name}${variantName ? ` (${variantName})` : ''}". ` +
+        `Requested: ${item.quantity}, Available: ${availableStock}`
+      );
+    }
+  } else {
+    const availableStock = item.products?.stock ?? 0;
+    if (item.quantity > availableStock) {
+      throw new Error(
+        `Not enough stock for "${item.products?.name || 'A product'}". ` +
+        `Requested: ${item.quantity}, Available: ${availableStock}`
+      );
+    }
+  }
+}
   const orderItemRows = cartItems.map((item) => {
     const price = item.product_variants?.price ?? item.products.price;
     return {
@@ -847,7 +883,7 @@ app.get("/admin/reports/sales", auth, adminOnly, async (req, res) => {
   const { month } = req.query;
   let query = supabase
     .from("order_items")
-    .select("product_id, quantity, price, products(name), orders(created_at, status)");
+    .select("product_id, quantity, price, products(name), orders!inner(created_at, status)");
   if (month) {
     const start = `${month}-01`;
     const end = new Date(new Date(start).setMonth(new Date(start).getMonth() + 1)).toISOString().slice(0, 10);

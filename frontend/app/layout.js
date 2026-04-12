@@ -30,11 +30,11 @@ export const metadata = {
     title: 'BlinkBasket - Smart Grocery Shopping',
     description:
       'Order groceries online with lightning-fast delivery and a seamless shopping experience.',
-    url: 'https://your-domain.vercel.app', // 🔥 replace later
+    url: 'https://blinkbasket.vercel.app', // 🔥 replace later
     siteName: 'BlinkBasket',
     images: [
       {
-        url: '/Blinkbasketlogo.PNG',
+        url: '/Blinkbasketlogo.JPEG',
         width: 512,
         height: 512,
         alt: 'BlinkBasket Logo',
@@ -56,7 +56,7 @@ export default function RootLayout({ children }) {
         <meta name="theme-color" content="#0ea5e9" />
 
         {/* iOS Support */}
-        <link rel="apple-touch-icon" href="/Blinkbasketlogo.PNG" />
+        <link rel="apple-touch-icon" href="/Blinkbasketlogo.JPEG" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta
           name="apple-mobile-web-app-status-bar-style"

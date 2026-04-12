@@ -19,7 +19,7 @@ export default function ProductDetailPage() {
   const [cartCount, setCartCount] = useState(0);
   const [addingToCart, setAddingToCart] = useState(false);
   const [toast, setToast] = useState(null);
-
+const [cartVersion, setCartVersion] = useState(0);
   const showToast = (type, msg) => {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 3000);
@@ -64,6 +64,7 @@ export default function ProductDetailPage() {
     } finally {
       setAddingToCart(false);
     }
+      setCartVersion(v => v + 1);
   };
 
   if (loading) return <FullPageSpinner />;
@@ -86,11 +87,12 @@ export default function ProductDetailPage() {
       
       <main className="pdp-main">
        
-        <ProductDetailView 
-          product={product} 
-          onAddToCart={handleAddToCart}
-          addingToCart={addingToCart}
-        />
+        <ProductDetailView
+  product={product}
+  onAddToCart={handleAddToCart}
+  addingToCart={addingToCart}
+  cartVersion={cartVersion}   // ← new prop
+/>
       </main>
 
       {toast && <div className={`pdp-toast ${toast.type}`}>{toast.msg}</div>}
