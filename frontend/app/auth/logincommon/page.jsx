@@ -54,19 +54,14 @@ useEffect(() => {
   // When Supabase redirects back, it appends tokens in the URL hash.
   // supabase.auth.onAuthStateChange fires with the session automatically.
 useEffect(() => {
-  const hash = window.location.hash;
-  const isOAuthCallback = hash.includes('access_token');
-
-  // Clear the hash so a page refresh doesn't re-trigger
-  if (isOAuthCallback) {
-    window.history.replaceState(null, '', window.location.pathname + window.location.search);
-  }
-
-  const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
-    if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user && isOAuthCallback) {
-      await handleSupabaseGoogleSession(session);
+  const { data: listener } = supabase.auth.onAuthStateChange(
+    async (event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+        await handleSupabaseGoogleSession(session);
+      }
     }
-  });
+  );
+
   return () => listener.subscription.unsubscribe();
 }, []);
 
