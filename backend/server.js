@@ -991,7 +991,23 @@ app.get("/admin/notifications", auth, adminOnly, async (req, res) => {
   res.json(data);
 });
 
-app.post("/admin/notifications/process", auth, adminOnly, async (_req, res) => {
+// app.post("/admin/notifications/process", auth, adminOnly, async (_req, res) => {
+//   try {
+//     await processNotifications();
+//     res.json({ success: true });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
+
+
+app.post("/admin/notifications/process", async (req, res) => {
+  const secret = req.headers["x-cron-secret"];
+
+  if (secret !== process.env.CRON_SECRET) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
   try {
     await processNotifications();
     res.json({ success: true });

@@ -12,12 +12,6 @@
       "dest": "server.js"
     }
   ],
-  "crons": [
-    {
-      "path": "/admin/notifications/process",
-      "schedule": "* * * * *"
-    }
-  ],
   "env": {
     "NODE_ENV": "production"
   }
