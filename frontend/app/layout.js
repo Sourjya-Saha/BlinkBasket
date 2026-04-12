@@ -30,7 +30,7 @@ export const metadata = {
     title: 'BlinkBasket - Smart Grocery Shopping',
     description:
       'Order groceries online with lightning-fast delivery and a seamless shopping experience.',
-    url: 'https://blinkbasket.vercel.app', // 🔥 replace later
+    url: 'https://blink-basket.vercel.app', // 🔥 replace later
     siteName: 'BlinkBasket',
     images: [
       {
@@ -43,7 +43,7 @@ export const metadata = {
     locale: 'en_US',
     type: 'website',
   },
-  metadataBase: new URL('https://blinkbasket.vercel.app'), // 🔥 replace later
+  metadataBase: new URL('https://blink-basket.vercel.app'), // 🔥 replace later
   themeColor: '#0ea5e9',
 };
 
