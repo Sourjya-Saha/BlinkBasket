@@ -491,7 +491,11 @@ useEffect(() => {
 
 export default function LoginCommon() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+     <Suspense fallback={
+      <div style={{ minHeight: '100vh', background: '#0a0c10', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 32, height: 32, border: '2px solid rgba(163,230,53,0.2)', borderTopColor: '#a3e635', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+      </div>
+    }>
       <LoginCommonInner />
     </Suspense>
   );
