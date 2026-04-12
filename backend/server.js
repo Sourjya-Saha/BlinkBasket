@@ -1086,6 +1086,13 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", version: "1.3", timestamp: new Date().toISOString() });
 });
 
+app.get("/", (req, res) => {
+  res.json({
+    message: "BlinkBasket API is running 🚀",
+    status: "ok"
+  });
+});
+
 app.use((_req, res) => res.status(404).json({ error: "Route not found" }));
 
 const PORT = process.env.PORT || 4000;
