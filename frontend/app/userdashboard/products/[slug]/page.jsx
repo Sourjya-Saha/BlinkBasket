@@ -19,7 +19,8 @@ export default function ProductDetailPage() {
   const [cartCount, setCartCount] = useState(0);
   const [addingToCart, setAddingToCart] = useState(false);
   const [toast, setToast] = useState(null);
-const [cartVersion, setCartVersion] = useState(0);
+  const [cartVersion, setCartVersion] = useState(0);
+
   const showToast = (type, msg) => {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 3000);
@@ -34,7 +35,6 @@ const [cartVersion, setCartVersion] = useState(0);
       .catch(() => setLoading(false));
   }, [slug]);
 
-  // Fetch Cart Count for Navbar
   useEffect(() => {
     if (!session?.accessToken) return;
     fetch(`${API_BASE}/cart`, { headers: { Authorization: `Bearer ${session.accessToken}` } })
@@ -64,35 +64,39 @@ const [cartVersion, setCartVersion] = useState(0);
     } finally {
       setAddingToCart(false);
     }
-      setCartVersion(v => v + 1);
+    setCartVersion(v => v + 1);
   };
 
-  if (loading) return <FullPageSpinner />;
-  if (!product) return <ErrorView />;
+  /* ── not-found state (only after fetch completes with no data) ── */
+  if (!loading && !product) return <ErrorView />;
 
   return (
     <div className="pdp-root">
       <style>{`
         .pdp-root { min-height: 100vh; background: #0a0c10; font-family: 'DM Sans', sans-serif; }
         .pdp-main { max-width: 1200px; margin: 0 auto; padding: 2rem 1rem 5rem; }
-        .pdp-back { display: inline-flex; align-items: center; gap: 8px; color: #6b7280; text-decoration: none; font-size: 0.9rem; margin-bottom: 2rem; transition: 0.2s; }
-        .pdp-back:hover { color: #a3e635; }
-        .pdp-toast { position: fixed; bottom: 2rem; right: 2rem; z-index: 1000; padding: 1rem 1.5rem; border-radius: 12px; font-weight: 600; border: 1px solid; backdrop-filter: blur(12px); animation: slideUp 0.3s ease; }
-        .pdp-toast.success { background: rgba(52,211,153,0.1); color: #34d399; border-color: rgba(52,211,153,0.2); }
-        .pdp-toast.error { background: rgba(239,68,68,0.1); color: #f87171; border-color: rgba(239,68,68,0.2); }
+        .pdp-toast {
+          position: fixed; bottom: 2rem; right: 2rem; z-index: 1000;
+          padding: 1rem 1.5rem; border-radius: 12px; font-weight: 600;
+          border: 1px solid; backdrop-filter: blur(12px);
+          animation: slideUp 0.3s ease;
+        }
+        .pdp-toast.success { background: rgba(52,211,153,0.1);  color: #34d399; border-color: rgba(52,211,153,0.2); }
+        .pdp-toast.error   { background: rgba(239,68,68,0.1);   color: #f87171; border-color: rgba(239,68,68,0.2); }
         @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
       `}</style>
 
       <UserNav cartCount={cartCount} />
-      
+
       <main className="pdp-main">
-       
+        {/* ProductDetailView handles its own skeleton when loading=true or product=null */}
         <ProductDetailView
-  product={product}
-  onAddToCart={handleAddToCart}
-  addingToCart={addingToCart}
-  cartVersion={cartVersion}   // ← new prop
-/>
+          product={product}
+          loading={loading}
+          onAddToCart={handleAddToCart}
+          addingToCart={addingToCart}
+          cartVersion={cartVersion}
+        />
       </main>
 
       {toast && <div className={`pdp-toast ${toast.type}`}>{toast.msg}</div>}
@@ -100,20 +104,17 @@ const [cartVersion, setCartVersion] = useState(0);
   );
 }
 
-function FullPageSpinner() {
-  return (
-    <div style={{ minHeight: '100vh', background: '#0a0c10', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: 30, height: 30, border: '3px solid rgba(163,230,53,0.1)', borderTopColor: '#a3e635', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
-}
-
 function ErrorView() {
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0c10', display: 'flex', flexDirection:'column', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-      <h2 style={{fontFamily:'Syne'}}>Product Not Found</h2>
-      <Link href="/userdashboard/products" style={{color:'#a3e635', marginTop:'1rem'}}>Go back to store</Link>
+    <div style={{
+      minHeight: '100vh', background: '#0a0c10',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', color: '#fff'
+    }}>
+      <h2 style={{ fontFamily: 'Syne' }}>Product Not Found</h2>
+      <Link href="/userdashboard/products" style={{ color: '#a3e635', marginTop: '1rem' }}>
+        Go back to store
+      </Link>
     </div>
   );
 }
