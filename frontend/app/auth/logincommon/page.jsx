@@ -2,12 +2,13 @@
 import { useState, useEffect } from 'react';
 import { signIn, useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
 
-export default function LoginCommon() {
+function LoginCommonInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const { status }   = useSession();
@@ -484,6 +485,15 @@ useEffect(() => {
         </div>
       </div>
     </>
+  );
+}
+
+
+export default function LoginCommon() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LoginCommonInner />
+    </Suspense>
   );
 }
 
