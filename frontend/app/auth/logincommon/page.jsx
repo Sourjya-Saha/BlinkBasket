@@ -27,9 +27,28 @@ function LoginCommonInner() {
   }, [searchParams]);
 
   // Redirect already-logged-in users
-  useEffect(() => {
-    if (status === 'authenticated') redirectByRole();
-  }, [status]);
+useEffect(() => {
+  if (status === 'authenticated') {
+    const interval = setInterval(async () => {
+      const res = await fetch('/api/auth/session');
+      const session = await res.json();
+
+      const role = session?.user?.role;
+
+      if (role) {
+        clearInterval(interval);
+
+        if (role === 'admin') {
+          router.replace('/admindashboard');
+        } else {
+          router.replace('/userdashboard');
+        }
+      }
+    }, 200);
+
+    return () => clearInterval(interval);
+  }
+}, [status]);
 
   // ── Handle Supabase OAuth callback ──────────────────────────────
   // When Supabase redirects back, it appends tokens in the URL hash.
@@ -98,6 +117,7 @@ useEffect(() => {
   }
 
   function redirectByRole(role) {
+      if (!role) return; 
     if (role === 'admin') {
       router.push('/admindashboard');
     } else {
