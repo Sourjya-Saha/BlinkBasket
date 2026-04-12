@@ -829,10 +829,10 @@ app.get("/orders/:id/invoice", auth, async (req, res) => {
   doc.moveDown();
   doc.text("Items:", { underline: true });
   order.order_items.forEach((item) => {
-    doc.text(`  ${item.products.name}${item.variant_name ? ` (${item.variant_name})` : ""} × ${item.quantity} @ ₹${item.price}`);
+    doc.text(`  ${item.products.name}${item.variant_name ? ` (${item.variant_name})` : ""} × ${item.quantity} @ Rs.${item.price}`);
   });
   doc.moveDown();
-  doc.fontSize(14).text(`Total: ₹${order.total}`, { bold: true });
+  doc.fontSize(14).text(`Total: Rs.${order.total}`, { bold: true });
   doc.end();
 });
 
