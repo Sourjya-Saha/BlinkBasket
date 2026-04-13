@@ -10,7 +10,6 @@ const BellIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="no
 const BellOffIcon = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>);
 const CheckIcon = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>);
 
-/* ─── Shared styles string (used by both Skeleton and main component) ──────── */
 const SHARED_STYLES = `
   @keyframes pdv-shimmer {
     0%   { background-position: -700px 0; }
@@ -163,18 +162,12 @@ const SHARED_STYLES = `
   .pdv-oos-dot { width: 8px; height: 8px; border-radius: 50%; background: #f87171; box-shadow: 0 0 6px rgba(248,113,113,0.5); flex-shrink: 0; }
 `;
 
-/* ─── Skeleton ─────────────────────────────────────────────────────────────── */
-
 function ProductDetailSkeleton() {
   return (
     <div className="pdv-root">
-      {/* Styles are injected here so skeleton renders correctly before product loads */}
       <style>{SHARED_STYLES}</style>
-
       <div className="pdv-sk pdv-sk-back" />
-
       <div className="pdv-container">
-        {/* Left — image gallery skeleton */}
         <div className="pdv-left">
           <div className="pdv-sk pdv-sk-main-img" />
           <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.25rem' }}>
@@ -183,26 +176,17 @@ function ProductDetailSkeleton() {
             ))}
           </div>
         </div>
-
-        {/* Right — info skeleton */}
         <div className="pdv-right">
-          {/* category + title */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
             <div className="pdv-sk pdv-sk-category" />
             <div className="pdv-sk pdv-sk-title-lg" />
             <div className="pdv-sk pdv-sk-title-sm" />
           </div>
-
-          {/* badges */}
           <div style={{ display: 'flex', gap: '8px' }}>
             <div className="pdv-sk pdv-sk-badge" />
             <div className="pdv-sk pdv-sk-badge" style={{ width: 90 }} />
           </div>
-
-          {/* price */}
           <div className="pdv-sk pdv-sk-price" />
-
-          {/* variant buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             <div className="pdv-sk pdv-sk-variant-label" />
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -211,8 +195,6 @@ function ProductDetailSkeleton() {
               ))}
             </div>
           </div>
-
-          {/* tabs */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
             <div style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.1rem' }}>
               <div className="pdv-sk pdv-sk-tab" />
@@ -225,8 +207,6 @@ function ProductDetailSkeleton() {
               <div className="pdv-sk pdv-sk-desc-line" style={{ width: '82%' }} />
             </div>
           </div>
-
-          {/* actions */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem', paddingTop: '1.2rem', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
               <div className="pdv-sk pdv-sk-qty-ctrl" />
@@ -238,8 +218,6 @@ function ProductDetailSkeleton() {
     </div>
   );
 }
-
-/* ─── Main Component ────────────────────────────────────────────────────────── */
 
 export default function ProductDetailView({ product, onAddToCart, addingToCart, cartVersion = 0, loading = false }) {
   const { data: session } = useSession();
@@ -286,6 +264,7 @@ export default function ProductDetailView({ product, onAddToCart, addingToCart, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, product?.id, selectedVariant?.id, cartVersion]);
 
+  // UPDATED: Now checks for the specific variant ID and refetches state when switching variants
   useEffect(() => {
     if (!session?.accessToken || !product?.id) return;
     fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/alerts/stock`, {
@@ -293,12 +272,15 @@ export default function ProductDetailView({ product, onAddToCart, addingToCart, 
     })
       .then(r => r.json())
       .then(alerts => {
-        if (Array.isArray(alerts) && alerts.some(a => a.product_id === product.id)) {
-          setNotifyState('subscribed');
+        if (Array.isArray(alerts)) {
+          const variantId = selectedVariant?.id || null;
+          // Check if user is subscribed to this specific product + variant combination
+          const isSub = alerts.some(a => a.product_id === product.id && a.variant_id === variantId);
+          setNotifyState(isSub ? 'subscribed' : 'idle');
         }
       })
       .catch(() => {});
-  }, [session, product?.id]);
+  }, [session, product?.id, selectedVariant?.id]); // UPDATED: added selectedVariant?.id to dependencies
 
   useEffect(() => {
     if (images.length <= 1) return;
@@ -323,6 +305,7 @@ export default function ProductDetailView({ product, onAddToCart, addingToCart, 
     setQuantity(1);
   };
 
+  // UPDATED: Includes variant_id in the payload
   const handleSubscribe = async () => {
     if (!session?.accessToken) { alert('Please log in to subscribe to alerts.'); return; }
     setNotifyState('loading');
@@ -330,7 +313,10 @@ export default function ProductDetailView({ product, onAddToCart, addingToCart, 
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/alerts/stock`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` },
-        body: JSON.stringify({ product_id: product.id }),
+        body: JSON.stringify({ 
+          product_id: product.id,
+          variant_id: selectedVariant?.id || null // Added variant_id
+        }),
       });
       if (res.ok) {
         setNotifyState('subscribed');
@@ -347,14 +333,21 @@ export default function ProductDetailView({ product, onAddToCart, addingToCart, 
     }
   };
 
+  // UPDATED: Appends variantId as a query parameter if un-subscribing from a variant
   const handleUnsubscribe = async () => {
     if (!session?.accessToken) return;
     setNotifyState('unsubscribing');
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/alerts/stock/${product.id}`, {
+      const url = new URL(`${process.env.NEXT_PUBLIC_API_BASE_URL}/alerts/stock/${product.id}`);
+      if (selectedVariant?.id) {
+        url.searchParams.append('variantId', selectedVariant.id);
+      }
+
+      const res = await fetch(url.toString(), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
+      
       if (res.ok) {
         setNotifyState('idle');
         setNotifyMsg("You've been unsubscribed.");
@@ -378,12 +371,10 @@ export default function ProductDetailView({ product, onAddToCart, addingToCart, 
   const isLoading = notifyState === 'loading' || notifyState === 'unsubscribing';
   const canAddToCart = remaining > 0 && quantity >= 1 && quantity <= remaining;
 
-  /* ── Render skeleton while loading ── */
   if (loading || !product) return <ProductDetailSkeleton />;
 
   return (
     <div className="pdv-root">
-      {/* SHARED_STYLES covers both skeleton and real content — safe to inject again here */}
       <style>{SHARED_STYLES}</style>
 
       <Link href="/userdashboard" className="pdv-nav-back">
@@ -391,7 +382,6 @@ export default function ProductDetailView({ product, onAddToCart, addingToCart, 
       </Link>
 
       <div className="pdv-container">
-        {/* Gallery */}
         <div className="pdv-left">
           <div className="pdv-main-img-wrap">
             <img key={activeImg} src={images[activeImg] || '/placeholder-product.png'} className="pdv-main-img" alt={product.name} />
@@ -403,7 +393,6 @@ export default function ProductDetailView({ product, onAddToCart, addingToCart, 
           </div>
         </div>
 
-        {/* Info */}
         <div className="pdv-right">
           <div>
             <div className="pdv-category">{product.categories?.name || 'Store Item'}</div>
@@ -490,8 +479,8 @@ export default function ProductDetailView({ product, onAddToCart, addingToCart, 
                   disabled={isLoading}
                 >
                   {notifyState === 'idle'          && (<><span className="pdv-btn-bell"><BellIcon /></span>Notify Me When Available</>)}
-                  {notifyState === 'loading'        && (<><span className="pdv-btn-spinner" />Setting up alert…</>)}
-                  {notifyState === 'subscribed'     && (
+                  {notifyState === 'loading'       && (<><span className="pdv-btn-spinner" />Setting up alert…</>)}
+                  {notifyState === 'subscribed'    && (
                     <>
                       <span className="pdv-btn-subscribed-txt"><CheckIcon /> Notifying when back in stock</span>
                       <span className="pdv-btn-unsub-txt"><BellOffIcon /> Remove Notification</span>

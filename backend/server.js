@@ -915,58 +915,114 @@ app.get("/admin/reports/customers", auth, adminOnly, async (req, res) => {
 });
 
 // ============================================================
-// ── STOCK ALERTS ────────────────────────────────────────────
+// ── STOCK ALERTS (Variant Aware) ────────────────────────────
 // ============================================================
 
 app.post("/alerts/stock", auth, async (req, res) => {
-  const { product_id } = req.body;
+  const { product_id, variant_id } = req.body;
   if (!product_id) return res.status(400).json({ error: "product_id required" });
-  const { error } = await supabase
-    .from("stock_alerts")
-    .upsert({ user_id: req.user.id, product_id, notified: false }, { onConflict: "user_id,product_id" });
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ success: true, message: "We will notify you when this is back!" });
+
+  try {
+    // Check for existing alert
+    let query = supabase.from("stock_alerts").select("id").eq("user_id", req.user.id).eq("product_id", product_id);
+    if (variant_id) query = query.eq("variant_id", variant_id);
+    else query = query.is("variant_id", null);
+    
+    const { data: existing } = await query.single();
+
+    if (existing) {
+      // Reactivate existing alert
+      const { error } = await supabase.from("stock_alerts").update({ notified: false }).eq("id", existing.id);
+      if (error) throw error;
+    } else {
+      // Create new alert
+      const { error } = await supabase.from("stock_alerts").insert({
+        user_id: req.user.id,
+        product_id,
+        variant_id: variant_id || null,
+        notified: false
+      });
+      if (error) throw error;
+    }
+    
+    res.json({ success: true, message: "We will notify you when this is back!" });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.delete("/alerts/stock/:productId", auth, async (req, res) => {
-  const { error } = await supabase
-    .from("stock_alerts").delete().eq("user_id", req.user.id).eq("product_id", req.params.productId);
+  const { variantId } = req.query; // Accept optional variantId via query param
+  let query = supabase.from("stock_alerts")
+    .delete()
+    .eq("user_id", req.user.id)
+    .eq("product_id", req.params.productId);
+    
+  if (variantId) query = query.eq("variant_id", variantId);
+  else query = query.is("variant_id", null);
+
+  const { error } = await query;
   if (error) return res.status(400).json({ error: error.message });
   res.json({ success: true });
 });
 
 app.get("/alerts/stock", auth, async (req, res) => {
   const { data, error } = await supabase
-    .from("stock_alerts").select("*, products(id, name, slug, images)")
-    .eq("user_id", req.user.id).eq("notified", false);
+    .from("stock_alerts")
+    .select("*, products(id, name, slug, images), product_variants(id, variant_name)")
+    .eq("user_id", req.user.id)
+    .eq("notified", false);
+    
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
-
 // ============================================================
 // ── NOTIFICATION CRON WORKER ────────────────────────────────
+// ============================================================
+
+// ============================================================
+// ── NOTIFICATION CRON WORKER (Variant Aware) ────────────────
 // ============================================================
 
 async function processNotifications() {
   const { data: pending, error } = await supabase
     .from("notifications_queue")
-    .select("*, users(email, phone, full_name), products(name, slug)")
-    .eq("sent", false).order("created_at", { ascending: true }).limit(50);
+    .select("*, users(email, phone, full_name), products(name, slug), product_variants(variant_name)")
+    .eq("sent", false)
+    .order("created_at", { ascending: true })
+    .limit(50);
+    
   if (error || !pending?.length) return;
+  
   for (const notif of pending) {
     try {
+      // Construct name dynamically: "Product Name" OR "Product Name (Variant Name)"
+      const itemName = notif.variant_id && notif.product_variants 
+        ? `${notif.products?.name} (${notif.product_variants.variant_name})` 
+        : notif.products?.name;
+
       if (notif.type === "USER_STOCK_AVAILABLE" && notif.users) {
         const productUrl = `${process.env.FRONTEND_URL}/userdashboard/products/${notif.products?.slug}`;
-        await sendMail(notif.users.email, `${notif.products?.name} is back in stock! 🛒`,
+        
+        await sendMail(
+          notif.users.email, 
+          `${itemName} is back in stock! 🛒`,
           `<p>Hi ${notif.users.full_name || "there"},</p>
-           <p><strong>${notif.products?.name}</strong> is back in stock on BlinkBasket.</p>
-           <p><a href="${productUrl}">Shop now →</a></p>`);
-        if (notif.users.phone)
-          await sendSMS(notif.users.phone, `BlinkBasket: ${notif.products?.name} is back in stock! ${productUrl}`);
+           <p><strong>${itemName}</strong> is back in stock on BlinkBasket.</p>
+           <p><a href="${productUrl}">Shop now →</a></p>`
+        );
+        
+        if (notif.users.phone) {
+          await sendSMS(notif.users.phone, `BlinkBasket: ${itemName} is back in stock! ${productUrl}`);
+        }
       } else if (notif.type === "ADMIN_LOW_STOCK") {
-        await sendMail(process.env.ADMIN_EMAIL, `⚠️ Low stock alert: ${notif.products?.name}`,
-          `<p>Stock for <strong>${notif.products?.name}</strong> has dropped below 5 units on BlinkBasket.</p><p>Please restock soon.</p>`);
+        await sendMail(
+          process.env.ADMIN_EMAIL, 
+          `⚠️ Low stock alert: ${itemName}`,
+          `<p>Stock for <strong>${itemName}</strong> has dropped below 5 units on BlinkBasket.</p><p>Please restock soon.</p>`
+        );
       }
+      
       await supabase.from("notifications_queue").update({ sent: true }).eq("id", notif.id);
     } catch (err) {
       console.error(`Notification ${notif.id} failed:`, err.message);
