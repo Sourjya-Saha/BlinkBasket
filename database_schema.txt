@@ -244,3 +244,77 @@ create trigger order_status_trigger
 before insert on orders
 for each row
 execute function set_order_status_placed();
+
+-- 1. Add variant_id to the alerts and queue tables
+ALTER TABLE stock_alerts 
+ADD COLUMN variant_id bigint references product_variants(id) on delete cascade;
+
+ALTER TABLE notifications_queue 
+ADD COLUMN variant_id bigint references product_variants(id) on delete cascade;
+
+-- 2. Update the unique constraint on stock_alerts to handle variants safely
+-- Drop the old constraint that only checked user_id + product_id
+ALTER TABLE stock_alerts DROP CONSTRAINT IF EXISTS stock_alerts_user_id_product_id_key;
+
+-- Create a unique index that safely handles null variant_ids 
+-- (so a user can subscribe to a base product OR specific variants without conflicts)
+CREATE UNIQUE INDEX idx_unique_stock_alert 
+ON stock_alerts (user_id, product_id, coalesce(variant_id, 0));
+
+-- 3. Update the original trigger to ONLY affect base products (where variant_id is null)
+CREATE OR REPLACE FUNCTION handle_stock_update()
+RETURNS trigger AS $$
+BEGIN
+  -- back in stock (for base products without variants)
+  IF old.stock = 0 AND new.stock > 0 THEN
+    INSERT INTO notifications_queue (type, product_id, user_id)
+    SELECT 'USER_STOCK_AVAILABLE', sa.product_id, sa.user_id
+    FROM stock_alerts sa
+    WHERE sa.product_id = new.id AND sa.variant_id IS NULL AND sa.notified = false;
+
+    UPDATE stock_alerts
+    SET notified = true
+    WHERE product_id = new.id AND variant_id IS NULL;
+  END IF;
+
+  -- low stock alert
+  IF new.stock < 5 AND old.stock >= 5 THEN
+    INSERT INTO notifications_queue (type, product_id)
+    VALUES ('ADMIN_LOW_STOCK', new.id);
+  END IF;
+
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 4. Create a NEW trigger exclusively for Product Variants
+CREATE OR REPLACE FUNCTION handle_variant_stock_update()
+RETURNS trigger AS $$
+BEGIN
+  -- back in stock (for variants)
+  IF old.stock = 0 AND new.stock > 0 THEN
+    INSERT INTO notifications_queue (type, product_id, variant_id, user_id)
+    SELECT 'USER_STOCK_AVAILABLE', new.product_id, new.id, sa.user_id
+    FROM stock_alerts sa
+    WHERE sa.product_id = new.product_id AND sa.variant_id = new.id AND sa.notified = false;
+
+    UPDATE stock_alerts
+    SET notified = true
+    WHERE variant_id = new.id;
+  END IF;
+
+  -- low stock alert
+  IF new.stock < 5 AND old.stock >= 5 THEN
+    INSERT INTO notifications_queue (type, product_id, variant_id)
+    VALUES ('ADMIN_LOW_STOCK', new.product_id, new.id);
+  END IF;
+
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 5. Attach the new trigger to the product_variants table
+CREATE TRIGGER variant_stock_update_trigger
+AFTER UPDATE OF stock ON product_variants
+FOR EACH ROW
+EXECUTE FUNCTION handle_variant_stock_update();
