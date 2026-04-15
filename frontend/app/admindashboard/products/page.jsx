@@ -10,6 +10,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000'
 
 const GridIcon = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>);
 const ListIcon = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>);
+const FilterIcon = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>);
 const EyeIcon = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>);
 const EditIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>);
 const TrashIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>);
@@ -69,11 +70,12 @@ function ProductDetailModal({ product, session, onClose, onEdit }) {
     fetch(`${API_BASE}/api/products/${product.id}/variants`, { headers: { Authorization: `Bearer ${session?.accessToken}` } })
       .then(r => r.json()).then(data => setVariants(Array.isArray(data) ? data : []))
       .catch(() => {}).finally(() => setLoadingVariants(false));
-  }, [product.id]);
+  }, [product.id, session?.accessToken, product.product_variants]);
 
   return (
     <>
       <style>{`
+        /* Styles kept identical for brevity */
         .pdm-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.85);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center;padding:1rem;animation:pdmFade 0.2s ease}
         @keyframes pdmFade{from{opacity:0}to{opacity:1}}
         .pdm-modal{background:#0a0d15;border:1px solid rgba(255,255,255,0.1);border-radius:22px;width:100%;max-width:820px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 32px 100px rgba(0,0,0,0.7);animation:pdmSlide 0.25s ease}
@@ -239,6 +241,17 @@ export default function AdminProducts() {
   const [toast, setToast]             = useState(null);
   const [viewMode, setViewMode]       = useState('grid');
   const [confirmAction, setConfirmAction] = useState(null);
+  
+  // Filtering States
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters]         = useState({
+    category: '',
+    brand: '',
+    stock: '',
+    variants: '',
+    status: ''
+  });
+
   const LIMIT = 12;
 
   useEffect(() => {
@@ -323,7 +336,43 @@ export default function AdminProducts() {
     showToast('success', `Product ${mode}!`);
   }
 
+  // Derived Filter Options
+  const uniqueCategories = [...new Set(products.map(p => p.categories?.name).filter(Boolean))];
+  const uniqueBrands = [...new Set(products.map(p => p.manufacturers?.name).filter(Boolean))];
+
+  // Filtering Logic
+  const filteredProducts = products.filter(p => {
+    // Exact Matches
+    if (filters.category && p.categories?.name !== filters.category) return false;
+    if (filters.brand && p.manufacturers?.name !== filters.brand) return false;
+    
+    // Stock Logic
+    if (filters.stock) {
+      if (filters.stock === 'in' && p.stock <= 10) return false;
+      if (filters.stock === 'low' && (p.stock === 0 || p.stock > 10)) return false;
+      if (filters.stock === 'out' && p.stock > 0) return false;
+    }
+
+    // Variants Logic
+    if (filters.variants) {
+      const hasVariants = p.product_variants?.filter(v => v.is_active !== false).length > 0;
+      if (filters.variants === 'yes' && !hasVariants) return false;
+      if (filters.variants === 'no' && hasVariants) return false;
+    }
+
+    // Status Logic
+    if (filters.status) {
+      if (filters.status === 'active' && p.is_active === false) return false;
+      if (filters.status === 'hidden' && p.is_active !== false) return false;
+      if (filters.status === 'featured' && !p.is_featured) return false;
+    }
+
+    return true;
+  });
+
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const totalPages = Math.ceil(total / LIMIT);
+  
   if (status === 'loading' || status === 'unauthenticated') return <FullPageSpinner />;
 
   const confirmConfig = confirmAction ? {
@@ -346,13 +395,29 @@ export default function AdminProducts() {
         .apr-page-sub{font-size:0.875rem;color:#4b5563;margin-top:0.25rem}
         .apr-add-btn{display:flex;align-items:center;gap:7px;padding:0.58rem 1.2rem;border-radius:11px;background:rgba(251,146,60,0.12);border:1px solid rgba(251,146,60,0.35);color:#fb923c;font-family:'DM Sans',sans-serif;font-size:0.85rem;font-weight:600;cursor:pointer;transition:background 0.15s}
         .apr-add-btn:hover{background:rgba(251,146,60,0.2)}
-        .apr-toolbar{display:flex;align-items:center;gap:0.75rem;margin-bottom:1.5rem;flex-wrap:wrap}
+        
+        .apr-toolbar{display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap}
         .apr-search{flex:1;min-width:200px;max-width:380px;background:rgba(13,16,24,0.8);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);border-radius:11px;padding:0.58rem 1rem;color:#e5e7eb;font-family:'DM Sans',sans-serif;font-size:0.875rem;outline:none;transition:border-color 0.2s}
         .apr-search:focus{border-color:rgba(251,146,60,0.4)}
         .apr-search::placeholder{color:#4b5563}
-        .apr-view-toggle{display:flex;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden}
-        .apr-view-btn{padding:0.5rem 0.75rem;background:transparent;border:none;color:#4b5563;cursor:pointer;transition:background 0.15s,color 0.15s;display:flex;align-items:center;gap:5px;font-size:0.78rem;font-family:'DM Sans',sans-serif}
+        
+        .apr-view-toggle{display:flex;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden;background:rgba(13,16,24,0.4)}
+        .apr-view-btn{padding:0.5rem 0.75rem;background:transparent;border:none;color:#4b5563;cursor:pointer;transition:background 0.15s,color 0.15s;display:flex;align-items:center;gap:6px;font-size:0.78rem;font-family:'DM Sans',sans-serif;position:relative}
+        .apr-view-btn:hover{background:rgba(255,255,255,0.04);color:#9ca3af}
         .apr-view-btn.active{background:rgba(251,146,60,0.1);color:#fb923c}
+        .apr-filter-dot{position:absolute;top:6px;right:6px;width:6px;height:6px;background:#fb923c;border-radius:50%;box-shadow:0 0 6px rgba(251,146,60,0.6)}
+        
+        /* Filter Bar Styles */
+        .apr-filter-bar{display:flex;gap:1rem;flex-wrap:wrap;background:rgba(13,16,24,0.6);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.5rem;animation:slideDown 0.2s ease-out}
+        @keyframes slideDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+        .apr-filter-group{display:flex;flex-direction:column;gap:0.4rem;flex:1;min-width:140px}
+        .apr-filter-label{font-size:0.7rem;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:0.06em}
+        .apr-select{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:0.5rem 0.75rem;color:#e5e7eb;font-family:'DM Sans',sans-serif;font-size:0.85rem;outline:none;cursor:pointer;transition:border-color 0.2s}
+        .apr-select:focus{border-color:rgba(251,146,60,0.4)}
+        .apr-select option{background:#0c111a;color:#e5e7eb}
+        .apr-clear-filters{display:flex;align-items:center;justify-content:center;padding:0.5rem 1rem;background:transparent;border:1px dashed rgba(255,255,255,0.15);color:#9ca3af;border-radius:8px;font-size:0.8rem;cursor:pointer;transition:all 0.15s;font-family:'DM Sans',sans-serif;height:100%;margin-top:1.4rem}
+        .apr-clear-filters:hover{border-color:rgba(239,68,68,0.4);color:#f87171;background:rgba(239,68,68,0.05)}
+
         .apr-count{background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.25);border-radius:6px;padding:4px 10px;font-size:0.72rem;color:#fb923c;font-weight:600}
         .apr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem}
         .apr-card{background:rgba(13,16,24,0.85);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.07);border-radius:18px;overflow:hidden;transition:border-color 0.2s,transform 0.2s,box-shadow 0.2s;display:flex;flex-direction:column}
@@ -380,7 +445,6 @@ export default function AdminProducts() {
         .apr-stock-save{display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:6px;background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.25);color:#fb923c;font-size:0.7rem;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;transition:background 0.15s}
         .apr-stock-save:hover:not(:disabled){background:rgba(251,146,60,0.2)}
         .apr-stock-save:disabled{opacity:0.4;cursor:not-allowed}
-        /* 4-button action row — never wraps */
         .apr-card-actions{display:flex;gap:0.35rem;margin-top:auto;flex-wrap:nowrap;align-items:stretch;min-width:0}
         .apr-view-action{display:flex;align-items:center;justify-content:center;gap:4px;flex:1;min-width:0;padding:0.45rem 0.3rem;border-radius:8px;background:rgba(99,102,241,0.07);border:1px solid rgba(99,102,241,0.18);color:#a5b4fc;font-size:0.7rem;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.15s;overflow:hidden;white-space:nowrap}
         .apr-view-action:hover{background:rgba(99,102,241,0.14)}
@@ -393,7 +457,6 @@ export default function AdminProducts() {
         .apr-toggle-action.do-show:hover{background:rgba(52,211,153,0.14)}
         .apr-del-action{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:30px;padding:0;border-radius:8px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.15);color:#f87171;cursor:pointer;transition:all 0.15s}
         .apr-del-action:hover{background:rgba(239,68,68,0.14)}
-        /* List mode */
         .apr-list{display:flex;flex-direction:column;gap:0.6rem}
         .apr-list-row{background:rgba(13,16,24,0.8);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.07);border-radius:14px;overflow:hidden;display:flex;align-items:stretch;transition:border-color 0.18s}
         .apr-list-row:hover{border-color:rgba(251,146,60,0.18)}
@@ -406,7 +469,6 @@ export default function AdminProducts() {
         .apr-list-price{font-family:'Syne',sans-serif;font-size:0.95rem;font-weight:800;color:#fb923c;flex-shrink:0}
         .apr-list-actions{display:flex;gap:0.4rem;flex-shrink:0}
         .apr-list-btn{display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:7px;font-size:0.75rem;cursor:pointer;font-family:'DM Sans',sans-serif;border:1px solid;transition:all 0.15s}
-        /* Confirm */
         .apr-confirm-overlay{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.85);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:1rem}
         .apr-confirm-box{background:#0a0d15;border:1px solid rgba(255,255,255,0.1);border-radius:18px;padding:2rem;max-width:400px;width:100%;text-align:center}
         .apr-confirm-icon{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:1.3rem}
@@ -415,7 +477,6 @@ export default function AdminProducts() {
         .apr-confirm-btns{display:flex;gap:0.75rem;justify-content:center}
         .apr-confirm-cancel{padding:0.55rem 1.2rem;border-radius:9px;background:transparent;border:1px solid rgba(255,255,255,0.1);color:#9ca3af;font-size:0.875rem;cursor:pointer;font-family:'DM Sans',sans-serif}
         .apr-confirm-action{padding:0.55rem 1.3rem;border-radius:9px;font-size:0.875rem;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;border:1px solid}
-        /* Pagination */
         .apr-pag{display:flex;align-items:center;justify-content:space-between;margin-top:1.75rem;flex-wrap:wrap;gap:0.75rem}
         .apr-pag-info{font-size:0.8rem;color:#6b7280}
         .apr-pag-btns{display:flex;gap:0.5rem}
@@ -428,7 +489,6 @@ export default function AdminProducts() {
         .apr-toast{position:fixed;bottom:1.5rem;right:1.5rem;z-index:999;padding:0.75rem 1.2rem;border-radius:10px;font-size:0.875rem;font-family:'DM Sans',sans-serif;border:1px solid;backdrop-filter:blur(12px);animation:aprUp 0.25s ease}
         .apr-toast.success{background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.3);color:#6ee7b7}
         .apr-toast.error{background:rgba(239,68,68,0.12);border-color:rgba(239,68,68,0.3);color:#fca5a5}
-        @keyframes aprUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
         @media(max-width:640px){
           .apr-main{padding:1rem 1rem 3rem}
           .apr-grid{grid-template-columns:repeat(2,1fr);gap:0.6rem}
@@ -456,25 +516,82 @@ export default function AdminProducts() {
               Add Product
             </button>
           </div>
+
           <div className="apr-toolbar">
             <input className="apr-search" placeholder="Search products by name..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            
             <div className="apr-view-toggle">
+              <button className={`apr-view-btn${showFilters ? ' active' : ''}`} onClick={() => setShowFilters(!showFilters)}>
+                <FilterIcon /> Filters
+                {activeFilterCount > 0 && <span className="apr-filter-dot" />}
+              </button>
+              <div style={{ width: 1, background: 'rgba(255,255,255,0.08)' }} />
               <button className={`apr-view-btn${viewMode === 'grid' ? ' active' : ''}`} onClick={() => setViewMode('grid')}><GridIcon /> Grid</button>
               <button className={`apr-view-btn${viewMode === 'list' ? ' active' : ''}`} onClick={() => setViewMode('list')}><ListIcon /> List</button>
             </div>
-            <span className="apr-count">{total} product{total !== 1 ? 's' : ''}</span>
+            <span className="apr-count">{filteredProducts.length} filtered {total > filteredProducts.length ? `(of ${total})` : ''}</span>
           </div>
+
+          {showFilters && (
+            <div className="apr-filter-bar">
+              <div className="apr-filter-group">
+                <span className="apr-filter-label">Category</span>
+                <select className="apr-select" value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value }))}>
+                  <option value="">All Categories</option>
+                  {uniqueCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
+              <div className="apr-filter-group">
+                <span className="apr-filter-label">Brand / Manufacturer</span>
+                <select className="apr-select" value={filters.brand} onChange={e => setFilters(f => ({ ...f, brand: e.target.value }))}>
+                  <option value="">All Brands</option>
+                  {uniqueBrands.map(brand => <option key={brand} value={brand}>{brand}</option>)}
+                </select>
+              </div>
+              <div className="apr-filter-group">
+                <span className="apr-filter-label">Stock Status</span>
+                <select className="apr-select" value={filters.stock} onChange={e => setFilters(f => ({ ...f, stock: e.target.value }))}>
+                  <option value="">Any Stock</option>
+                  <option value="in">In Stock </option>
+                  <option value="low">Low Stock </option>
+                  <option value="out">Out of Stock</option>
+                </select>
+              </div>
+              <div className="apr-filter-group">
+                <span className="apr-filter-label">Variants</span>
+                <select className="apr-select" value={filters.variants} onChange={e => setFilters(f => ({ ...f, variants: e.target.value }))}>
+                  <option value="">All Products</option>
+                  <option value="yes">Has Variants</option>
+                  <option value="no">Single Item Only</option>
+                </select>
+              </div>
+              <div className="apr-filter-group">
+                <span className="apr-filter-label">Visibility</span>
+                <select className="apr-select" value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
+                  <option value="">All Statuses</option>
+                  <option value="active">Active (Visible)</option>
+                  <option value="hidden">Hidden</option>
+                  <option value="featured">Featured Only</option>
+                </select>
+              </div>
+              {activeFilterCount > 0 && (
+                <button className="apr-clear-filters" onClick={() => setFilters({ category: '', brand: '', stock: '', variants: '', status: '' })}>
+                  Clear All
+                </button>
+              )}
+            </div>
+          )}
 
           {loading ? (
             <div className="apr-empty"><div className="apr-empty-icon"><PackageIcon /></div><p style={{ color: '#4b5563', fontSize: '0.875rem' }}>Loading products...</p></div>
-          ) : products.length === 0 ? (
+          ) : filteredProducts.length === 0 ? (
             <div className="apr-empty"><div className="apr-empty-icon"><PackageIcon /></div>
               <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, color: '#e5e7eb', marginBottom: 8 }}>No products found</p>
-              <p style={{ fontSize: '0.82rem', color: '#4b5563' }}>{search ? 'Try a different search.' : 'Add your first product to get started.'}</p>
+              <p style={{ fontSize: '0.82rem', color: '#4b5563' }}>{search || activeFilterCount > 0 ? 'Try adjusting your search or filters.' : 'Add your first product to get started.'}</p>
             </div>
           ) : viewMode === 'grid' ? (
             <div className="apr-grid">
-              {products.map(p => {
+              {filteredProducts.map(p => {
                 const imgs = getImages(p.images);
                 const stockVal = stockEdit[p.id] !== undefined ? stockEdit[p.id] : String(p.stock);
                 const variantCount = p.product_variants?.filter(v => v.is_active !== false).length || 0;
@@ -533,7 +650,7 @@ export default function AdminProducts() {
             </div>
           ) : (
             <div className="apr-list">
-              {products.map(p => {
+              {filteredProducts.map(p => {
                 const imgs = getImages(p.images);
                 const variantCount = p.product_variants?.filter(v => v.is_active !== false).length || 0;
                 const isActive = p.is_active !== false;
