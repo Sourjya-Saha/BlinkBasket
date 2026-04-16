@@ -812,186 +812,182 @@ app.get("/orders/:id", auth, async (req, res) => {
 
 
 app.get("/orders/:id/invoice", auth, async (req, res) => {
-  // ==============================
-  // 1️⃣ GET ORDER
-  // ==============================
-  const { data: order, error } = await supabase
-    .from("orders")
-    .select("*, order_items(*, products(name))")
-    .eq("id", req.params.id)
-    .single();
-
-  if (error) return res.status(404).json({ error: "Order not found" });
-
-  if (req.user.role !== "admin" && order.user_id !== req.user.id)
-    return res.status(403).json({ error: "Forbidden" });
-
-  // ==============================
-  // 2️⃣ GET USER NAME USING user_id
-  // ==============================
-  const { data: user } = await supabase
-    .from("users")
-    .select("name")
-    .eq("id", order.user_id)
-    .single();
-
-  const userName = user?.name || "Customer";
-
-  // ==============================
-  // 📄 PDF SETUP
-  // ==============================
-  const doc = new PDFDocument({ margin: 40 });
-
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="${order.invoice_id}.pdf"`
-  );
-
-  doc.pipe(res);
-
-  // ==============================
-  // 💰 Currency Formatter
-  // ==============================
-  const formatCurrency = (val) =>
-    `Rs. ${Number(val).toLocaleString("en-IN", {
-      minimumFractionDigits: 2,
-    })}`;
-
-  // ==============================
-  // 🟢 HEADER
-  // ==============================
-
-  /*
-  // 🔒 LOGO DISABLED
   try {
-    doc.image("logo.png", 40, 40, { width: 50 });
-  } catch (e) {}
-  */
+    // ==============================
+    // 1️⃣ GET ORDER & USER DATA
+    // ==============================
+    // We join 'users' to get 'full_name' and 'order_items' with 'products'
+    const { data: order, error } = await supabase
+      .from("orders")
+      .select(`
+        *,
+        users (full_name),
+        order_items (
+          *,
+          products (name)
+        )
+      `)
+      .eq("id", req.params.id)
+      .single();
 
-  doc
-    .fillColor("#00c853")
-    .fontSize(22)
-    .text("BlinkBasket", 40, 45)
-    .fillColor("black")
-    .fontSize(10)
-    .text("Fast • Fresh • Delivered", 40, 70);
+    if (error || !order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
 
-  doc
-    .fontSize(12)
-    .text(`Invoice #: ${order.invoice_id}`, 350, 45, { align: "right" })
-    .text(`Date: ${new Date(order.created_at).toDateString()}`, {
-      align: "right",
-    })
-    .text(`Status: ${order.status.toUpperCase()}`, { align: "right" });
+    // Security: Check if admin or the owner of the order
+    if (req.user.role !== "admin" && order.user_id !== req.user.id) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
 
-  doc.moveDown(2);
+    // Extract the name from the joined users table (mapped from schema 3.5.1)
+    const userName = order.users?.full_name || "Customer";
 
-  // ==============================
-  // 👤 BILLED TO (LEFT SIDE)
-  // ==============================
+    // ==============================
+    // 📄 PDF SETUP
+    // ==============================
+    const doc = new PDFDocument({ margin: 40, size: "A4" });
 
-  const billedTop = doc.y;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${order.invoice_id}.pdf"`
+    );
 
-  doc
-    .fontSize(12)
-    .text("Billed To:", 40, billedTop, { underline: true });
+    doc.pipe(res);
 
-  doc
-    .fontSize(11)
-    .text(userName, 40, billedTop + 18) // ✅ from users table
-    .text(`Payment: ${order.payment_method.toUpperCase()}`, 40)
-    .text(`Payment Status: ${order.payment_status}`, 40);
+    // ==============================
+    // 💰 Currency Formatter
+    // ==============================
+    const formatCurrency = (val) =>
+      `Rs. ${Number(val).toLocaleString("en-IN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
 
-  doc.moveDown(2);
+    // ==============================
+    // 🟢 HEADER
+    // ==============================
+    try {
+      // Ensure the path to your logo is correct relative to server root
+      doc.image("Blinkbasketlogonew.png", 40, 40, { width: 50 });
+    } catch (e) {
+      // Fallback if logo fails to load
+    }
 
-  // ==============================
-  // 📦 TABLE HEADER
-  // ==============================
+    doc
+      .fillColor("#00c853")
+      .fontSize(22)
+      .text("BlinkBasket", 40, 45)
+      .fillColor("black")
+      .fontSize(10)
+      .text("Fast • Fresh • Delivered", 40, 70);
 
-  const tableTop = doc.y;
+    doc
+      .fontSize(12)
+      .text(`Invoice #: ${order.invoice_id}`, 350, 45, { align: "right" })
+      .text(`Date: ${new Date(order.created_at).toDateString()}`, { align: "right" })
+      .text(`Status: ${order.status.toUpperCase()}`, { align: "right" });
 
-  doc
-    .fontSize(12)
-    .text("Item", 40, tableTop)
-    .text("Qty", 250, tableTop)
-    .text("Price", 320, tableTop)
-    .text("Total", 430, tableTop);
+    doc.moveDown(2);
 
-  doc.moveTo(40, tableTop + 15).lineTo(550, tableTop + 15).stroke();
+    // ==============================
+    // 👤 BILLED TO
+    // ==============================
+    const billedTop = doc.y;
 
-  let y = tableTop + 25;
-
-  // ==============================
-  // 📦 ITEMS
-  // ==============================
-
-  order.order_items.forEach((item) => {
-    const itemName = `${item.products.name}${
-      item.variant_name ? ` (${item.variant_name})` : ""
-    }`;
+    doc
+      .fontSize(12)
+      .text("Billed To:", 40, billedTop, { underline: true });
 
     doc
       .fontSize(11)
-      .text(itemName, 40, y, { width: 200 })
-      .text(item.quantity, 250, y)
-      .text(formatCurrency(item.price), 320, y)
-      .text(formatCurrency(item.quantity * item.price), 430, y);
+      .text(userName, 40, billedTop + 18)
+      .text(`Payment: ${order.payment_method.toUpperCase()}`, 40)
+      .text(`Payment Status: ${order.payment_status.toUpperCase()}`, 40);
 
-    y += 22;
-  });
+    doc.moveDown(2);
 
-  // ==============================
-  // 💰 TOTAL
-  // ==============================
+    // ==============================
+    // 📦 TABLE HEADER
+    // ==============================
+    const tableTop = doc.y;
 
-  const subtotal = order.total;
-  const tax = Math.round(subtotal * 0.05);
-  const grandTotal = subtotal + tax;
+    doc
+      .fontSize(12)
+      .text("Item", 40, tableTop)
+      .text("Qty", 250, tableTop)
+      .text("Price", 320, tableTop)
+      .text("Total", 430, tableTop, { width: 120, align: "right" });
 
-  y += 10;
-  doc.moveTo(300, y).lineTo(550, y).stroke();
+    doc.moveTo(40, tableTop + 15).lineTo(550, tableTop + 15).stroke();
 
-  y += 10;
+    let y = tableTop + 25;
 
-  doc
-    .fontSize(12)
-    .text("Subtotal:", 300, y)
-    .text(formatCurrency(subtotal), 430, y, { align: "right" });
+    // ==============================
+    // 📦 ITEMS
+    // ==============================
+    order.order_items.forEach((item) => {
+      const itemName = `${item.products.name}${
+        item.variant_name ? ` (${item.variant_name})` : ""
+      }`;
 
-  y += 20;
+      doc
+        .fontSize(11)
+        .text(itemName, 40, y, { width: 200 })
+        .text(item.quantity, 250, y)
+        .text(formatCurrency(item.price), 320, y)
+        .text(formatCurrency(item.quantity * item.price), 430, y, { width: 120, align: "right" });
 
-  doc
-    .text("Tax (5%):", 300, y)
-    .text(formatCurrency(tax), 430, y, { align: "right" });
-
-  y += 20;
-
-  doc
-    .fontSize(14)
-    .fillColor("#00c853")
-    .text("Grand Total:", 300, y)
-    .text(formatCurrency(grandTotal), 430, y, { align: "right" })
-    .fillColor("black");
-
-  // ==============================
-  // 💬 FOOTER (BOTTOM CENTER)
-  // ==============================
-
-  const pageHeight = doc.page.height;
-
-  doc
-    .fontSize(10)
-    .fillColor("gray")
-    .text("Thank you for shopping with BlinkBasket!", 0, pageHeight - 60, {
-      align: "center",
-      width: doc.page.width,
-    })
-    .text("This is a computer-generated invoice.", {
-      align: "center",
+      y += 22;
     });
 
-  doc.end();
+    // ==============================
+    // 💰 TOTALS
+    // ==============================
+    const subtotal = Number(order.total);
+    const tax = Math.round(subtotal * 0.05);
+    const grandTotal = subtotal + tax;
+
+    y += 10;
+    doc.moveTo(300, y).lineTo(550, y).stroke();
+    y += 10;
+
+    doc
+      .fontSize(12)
+      .text("Subtotal:", 300, y)
+      .text(formatCurrency(subtotal), 430, y, { width: 120, align: "right" });
+
+    y += 20;
+    doc
+      .text("Tax (GST 5%):", 300, y)
+      .text(formatCurrency(tax), 430, y, { width: 120, align: "right" });
+
+    y += 20;
+    doc
+      .fontSize(14)
+      .fillColor("#00c853")
+      .text("Grand Total:", 300, y, { bold: true })
+      .text(formatCurrency(grandTotal), 430, y, { width: 120, align: "right" })
+      .fillColor("black");
+
+    // ==============================
+    // 💬 FOOTER
+    // ==============================
+    const pageHeight = doc.page.height;
+    doc
+      .fontSize(10)
+      .fillColor("gray")
+      .text("Thank you for shopping with BlinkBasket!", 0, pageHeight - 60, {
+        align: "center",
+        width: doc.page.width,
+      });
+
+    doc.end();
+
+  } catch (err) {
+    console.error("Invoice Generation Error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
 // ============================================================
