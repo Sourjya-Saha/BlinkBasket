@@ -811,8 +811,10 @@ app.get("/orders/:id", auth, async (req, res) => {
 });
 
 
-
 app.get("/orders/:id/invoice", auth, async (req, res) => {
+  // ==============================
+  // 1️⃣ GET ORDER
+  // ==============================
   const { data: order, error } = await supabase
     .from("orders")
     .select("*, order_items(*, products(name))")
@@ -824,6 +826,20 @@ app.get("/orders/:id/invoice", auth, async (req, res) => {
   if (req.user.role !== "admin" && order.user_id !== req.user.id)
     return res.status(403).json({ error: "Forbidden" });
 
+  // ==============================
+  // 2️⃣ GET USER NAME USING user_id
+  // ==============================
+  const { data: user } = await supabase
+    .from("users")
+    .select("name")
+    .eq("id", order.user_id)
+    .single();
+
+  const userName = user?.name || "Customer";
+
+  // ==============================
+  // 📄 PDF SETUP
+  // ==============================
   const doc = new PDFDocument({ margin: 40 });
 
   res.setHeader("Content-Type", "application/pdf");
@@ -835,26 +851,32 @@ app.get("/orders/:id/invoice", auth, async (req, res) => {
   doc.pipe(res);
 
   // ==============================
-  // 🟢 HEADER (LOGO + BRAND)
+  // 💰 Currency Formatter
+  // ==============================
+  const formatCurrency = (val) =>
+    `Rs. ${Number(val).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+    })}`;
+
+  // ==============================
+  // 🟢 HEADER
   // ==============================
 
   /*
-  // 🔒 LOGO DISABLED FOR NOW
+  // 🔒 LOGO DISABLED
   try {
     doc.image("logo.png", 40, 40, { width: 50 });
   } catch (e) {}
   */
 
-  // Adjusted alignment since logo is removed
   doc
     .fillColor("#00c853")
     .fontSize(22)
-    .text("BlinkBasket", 40, 45) // shifted left
+    .text("BlinkBasket", 40, 45)
     .fillColor("black")
     .fontSize(10)
     .text("Fast • Fresh • Delivered", 40, 70);
 
-  // Invoice info (right side)
   doc
     .fontSize(12)
     .text(`Invoice #: ${order.invoice_id}`, 350, 45, { align: "right" })
@@ -866,18 +888,22 @@ app.get("/orders/:id/invoice", auth, async (req, res) => {
   doc.moveDown(2);
 
   // ==============================
-  // 👤 CUSTOMER INFO
+  // 👤 BILLED TO (LEFT SIDE)
   // ==============================
+
+  const billedTop = doc.y;
 
   doc
     .fontSize(12)
-    .text("Billed To:", { underline: true })
-    .moveDown(0.5)
-    .text(`User ID: ${order.user_id}`)
-    .text(`Payment: ${order.payment_method.toUpperCase()}`)
-    .text(`Payment Status: ${order.payment_status}`);
+    .text("Billed To:", 40, billedTop, { underline: true });
 
-  doc.moveDown(1.5);
+  doc
+    .fontSize(11)
+    .text(userName, 40, billedTop + 18) // ✅ from users table
+    .text(`Payment: ${order.payment_method.toUpperCase()}`, 40)
+    .text(`Payment Status: ${order.payment_status}`, 40);
+
+  doc.moveDown(2);
 
   // ==============================
   // 📦 TABLE HEADER
@@ -889,8 +915,8 @@ app.get("/orders/:id/invoice", auth, async (req, res) => {
     .fontSize(12)
     .text("Item", 40, tableTop)
     .text("Qty", 250, tableTop)
-    .text("Price", 300, tableTop)
-    .text("Total", 400, tableTop);
+    .text("Price", 320, tableTop)
+    .text("Total", 430, tableTop);
 
   doc.moveTo(40, tableTop + 15).lineTo(550, tableTop + 15).stroke();
 
@@ -907,24 +933,23 @@ app.get("/orders/:id/invoice", auth, async (req, res) => {
 
     doc
       .fontSize(11)
-      .text(itemName, 40, y)
+      .text(itemName, 40, y, { width: 200 })
       .text(item.quantity, 250, y)
-      .text(`Rs. ${item.price}`, 300, y)
-      .text(`Rs. ${item.quantity * item.price}`, 400, y);
+      .text(formatCurrency(item.price), 320, y)
+      .text(formatCurrency(item.quantity * item.price), 430, y);
 
-    y += 20;
+    y += 22;
   });
 
-  doc.moveDown();
-
   // ==============================
-  // 💰 TOTAL SECTION
+  // 💰 TOTAL
   // ==============================
 
   const subtotal = order.total;
   const tax = Math.round(subtotal * 0.05);
   const grandTotal = subtotal + tax;
 
+  y += 10;
   doc.moveTo(300, y).lineTo(550, y).stroke();
 
   y += 10;
@@ -932,13 +957,13 @@ app.get("/orders/:id/invoice", auth, async (req, res) => {
   doc
     .fontSize(12)
     .text("Subtotal:", 300, y)
-    .text(`Rs. ${subtotal}`, 450, y, { align: "right" });
+    .text(formatCurrency(subtotal), 430, y, { align: "right" });
 
   y += 20;
 
   doc
     .text("Tax (5%):", 300, y)
-    .text(`₹${tax}`, 450, y, { align: "right" });
+    .text(formatCurrency(tax), 430, y, { align: "right" });
 
   y += 20;
 
@@ -946,20 +971,21 @@ app.get("/orders/:id/invoice", auth, async (req, res) => {
     .fontSize(14)
     .fillColor("#00c853")
     .text("Grand Total:", 300, y)
-    .text(`₹${grandTotal}`, 450, y, { align: "right" })
+    .text(formatCurrency(grandTotal), 430, y, { align: "right" })
     .fillColor("black");
 
-  doc.moveDown(3);
+  // ==============================
+  // 💬 FOOTER (BOTTOM CENTER)
+  // ==============================
 
-  // ==============================
-  // 💬 FOOTER
-  // ==============================
+  const pageHeight = doc.page.height;
 
   doc
     .fontSize(10)
     .fillColor("gray")
-    .text("Thank you for shopping with BlinkBasket!", {
+    .text("Thank you for shopping with BlinkBasket!", 0, pageHeight - 60, {
       align: "center",
+      width: doc.page.width,
     })
     .text("This is a computer-generated invoice.", {
       align: "center",
