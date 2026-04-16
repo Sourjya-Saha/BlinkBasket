@@ -810,29 +810,161 @@ app.get("/orders/:id", auth, async (req, res) => {
   res.json(data);
 });
 
+
+
 app.get("/orders/:id/invoice", auth, async (req, res) => {
   const { data: order, error } = await supabase
-    .from("orders").select("*, order_items(*, products(name))").eq("id", req.params.id).single();
+    .from("orders")
+    .select("*, order_items(*, products(name))")
+    .eq("id", req.params.id)
+    .single();
+
   if (error) return res.status(404).json({ error: "Order not found" });
+
   if (req.user.role !== "admin" && order.user_id !== req.user.id)
     return res.status(403).json({ error: "Forbidden" });
-  const doc = new PDFDocument({ margin: 50 });
+
+  const doc = new PDFDocument({ margin: 40 });
+
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${order.invoice_id}.pdf"`);
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${order.invoice_id}.pdf"`
+  );
+
   doc.pipe(res);
-  doc.fontSize(20).text("BlinkBasket", { align: "center" });
-  doc.fontSize(12).text(`Invoice: ${order.invoice_id}`, { align: "center" });
-  doc.moveDown();
-  doc.text(`Date: ${new Date(order.created_at).toDateString()}`);
-  doc.text(`Payment: ${order.payment_method.toUpperCase()} — ${order.payment_status}`);
-  doc.text(`Status: ${order.status}`);
-  doc.moveDown();
-  doc.text("Items:", { underline: true });
+
+  // ==============================
+  // 🟢 HEADER (LOGO + BRAND)
+  // ==============================
+
+  /*
+  // 🔒 LOGO DISABLED FOR NOW
+  try {
+    doc.image("logo.png", 40, 40, { width: 50 });
+  } catch (e) {}
+  */
+
+  // Adjusted alignment since logo is removed
+  doc
+    .fillColor("#00c853")
+    .fontSize(22)
+    .text("BlinkBasket", 40, 45) // shifted left
+    .fillColor("black")
+    .fontSize(10)
+    .text("Fast • Fresh • Delivered", 40, 70);
+
+  // Invoice info (right side)
+  doc
+    .fontSize(12)
+    .text(`Invoice #: ${order.invoice_id}`, 350, 45, { align: "right" })
+    .text(`Date: ${new Date(order.created_at).toDateString()}`, {
+      align: "right",
+    })
+    .text(`Status: ${order.status.toUpperCase()}`, { align: "right" });
+
+  doc.moveDown(2);
+
+  // ==============================
+  // 👤 CUSTOMER INFO
+  // ==============================
+
+  doc
+    .fontSize(12)
+    .text("Billed To:", { underline: true })
+    .moveDown(0.5)
+    .text(`User ID: ${order.user_id}`)
+    .text(`Payment: ${order.payment_method.toUpperCase()}`)
+    .text(`Payment Status: ${order.payment_status}`);
+
+  doc.moveDown(1.5);
+
+  // ==============================
+  // 📦 TABLE HEADER
+  // ==============================
+
+  const tableTop = doc.y;
+
+  doc
+    .fontSize(12)
+    .text("Item", 40, tableTop)
+    .text("Qty", 250, tableTop)
+    .text("Price", 300, tableTop)
+    .text("Total", 400, tableTop);
+
+  doc.moveTo(40, tableTop + 15).lineTo(550, tableTop + 15).stroke();
+
+  let y = tableTop + 25;
+
+  // ==============================
+  // 📦 ITEMS
+  // ==============================
+
   order.order_items.forEach((item) => {
-    doc.text(`  ${item.products.name}${item.variant_name ? ` (${item.variant_name})` : ""} × ${item.quantity} @ Rs.${item.price}`);
+    const itemName = `${item.products.name}${
+      item.variant_name ? ` (${item.variant_name})` : ""
+    }`;
+
+    doc
+      .fontSize(11)
+      .text(itemName, 40, y)
+      .text(item.quantity, 250, y)
+      .text(`Rs. ${item.price}`, 300, y)
+      .text(`Rs. ${item.quantity * item.price}`, 400, y);
+
+    y += 20;
   });
+
   doc.moveDown();
-  doc.fontSize(14).text(`Total: Rs.${order.total}`, { bold: true });
+
+  // ==============================
+  // 💰 TOTAL SECTION
+  // ==============================
+
+  const subtotal = order.total;
+  const tax = Math.round(subtotal * 0.05);
+  const grandTotal = subtotal + tax;
+
+  doc.moveTo(300, y).lineTo(550, y).stroke();
+
+  y += 10;
+
+  doc
+    .fontSize(12)
+    .text("Subtotal:", 300, y)
+    .text(`Rs. ${subtotal}`, 450, y, { align: "right" });
+
+  y += 20;
+
+  doc
+    .text("Tax (5%):", 300, y)
+    .text(`₹${tax}`, 450, y, { align: "right" });
+
+  y += 20;
+
+  doc
+    .fontSize(14)
+    .fillColor("#00c853")
+    .text("Grand Total:", 300, y)
+    .text(`₹${grandTotal}`, 450, y, { align: "right" })
+    .fillColor("black");
+
+  doc.moveDown(3);
+
+  // ==============================
+  // 💬 FOOTER
+  // ==============================
+
+  doc
+    .fontSize(10)
+    .fillColor("gray")
+    .text("Thank you for shopping with BlinkBasket!", {
+      align: "center",
+    })
+    .text("This is a computer-generated invoice.", {
+      align: "center",
+    });
+
   doc.end();
 });
 
