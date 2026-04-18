@@ -236,7 +236,7 @@ RAZORPAY_KEY_SECRET=your_key_secret
 
 Run the complete v1.1 schema in your **Supabase SQL editor**. The schema includes all 13 tables, 10 indexes (including GIN indexes for `jsonb` columns), and all 3 triggers.
 
-> You can find the full copy-paste ready SQL in `docs/schema_v1.1.sql`.
+> You can find the full copy-paste database schema ready in `/database_schema.txt`.
 
 ---
 
@@ -253,7 +253,7 @@ Run the complete v1.1 schema in your **Supabase SQL editor**. The schema include
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/blinkbasket.git
+git clone https://github.com/Sourjya-Saha/blinkbasket.git
 cd blinkbasket
 
 # Install frontend dependencies
@@ -279,25 +279,6 @@ Frontend runs on `http://localhost:3000` · Backend runs on `http://localhost:50
 
 ---
 
-## 📁 Project Structure
-
-```
-blinkbasket/
-├── frontend/               # Next.js 14 App Router
-│   ├── app/
-│   ├── components/
-│   └── store/              # Zustand (cart + auth)
-├── backend/                # Node.js + Express
-│   ├── routes/
-│   ├── controllers/
-│   ├── workers/            # node-cron notification worker
-│   └── middleware/
-└── docs/
-    └── schema_v1.1.sql     # Full Supabase schema
-```
-
----
-
 ## 📄 License
 
 This project is private and not open for public use or redistribution.
@@ -305,5 +286,5 @@ This project is private and not open for public use or redistribution.
 ---
 
 <div align="center">
-  Built with ❤️ by <a href="https://github.com/your-username">Sonu</a>
+  Built by <a href="https://github.com/Sourjya-Saha">Sourjya</a>
 </div>
